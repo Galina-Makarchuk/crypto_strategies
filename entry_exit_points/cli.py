@@ -1,0 +1,204 @@
+"""CLI entry point.
+
+Usage:
+    python -m entry_exit_points --strategy supertrend --mode historical --interval 15 --candles 800
+    python -m entry_exit_points --strategy ema --mode live --interval 5 --poll 30
+"""
+
+from __future__ import annotations
+
+import argparse
+import logging
+import sys
+
+from .backtester import Backtester
+from .fetcher import BybitFetcher
+from .live import LiveEngine
+from .models import VALID_INTERVALS, StrategyConfig, StrategyName
+from .strategies import AdaptiveSuperTrendStrategy, EMACrossoverStrategy, ExhaustionReversalStrategy, ImpulseFlagStrategy, InverseOrderBlockStrategy, InverseSuperTrendStrategy, OrderBlockStrategy, SuperTrendStrategy, SwingBreakoutStrategy, InverseSwingBreakoutStrategy
+from .visualization import build_chart
+
+logger = logging.getLogger(__name__)
+
+
+def _build_strategy(name: str, config: StrategyConfig):
+    strategies = {
+        StrategyName.SWING.value: SwingBreakoutStrategy,
+        StrategyName.SWING_INV.value: InverseSwingBreakoutStrategy,
+        StrategyName.EMA_CROSS.value: EMACrossoverStrategy,
+        StrategyName.SUPERTREND.value: SuperTrendStrategy,
+        StrategyName.SUPERTREND_INV.value: InverseSuperTrendStrategy,
+        StrategyName.SUPERTREND_ADAPTIVE.value: AdaptiveSuperTrendStrategy,
+        StrategyName.EXHAUSTION_REVERSAL.value: ExhaustionReversalStrategy,
+        StrategyName.IMPULSE_FLAG.value: ImpulseFlagStrategy,
+        StrategyName.ORDER_BLOCK.value: OrderBlockStrategy,
+        StrategyName.ORDER_BLOCK_INV.value: InverseOrderBlockStrategy,
+    }
+    cls = strategies.get(name)
+    if cls is None:
+        raise ValueError(f"Unknown strategy '{name}'. Available: {list(strategies.keys())}")
+    return cls(config)
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Bybit BTCUSDT Professional Trading Strategies",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--strategy",
+        choices=[s.value for s in StrategyName],
+        default="supertrend",
+        help="Strategy to run (default: supertrend)",
+    )
+    parser.add_argument(
+        "--mode",
+        choices=["historical", "live"],
+        default="historical",
+    )
+    parser.add_argument(
+        "--symbol",
+        default="BTCUSDT",
+        help="Trading pair (default: BTCUSDT)",
+    )
+    parser.add_argument(
+        "--interval",
+        default="15",
+        choices=sorted(VALID_INTERVALS),
+        help="Candle interval (default: 15)",
+    )
+    parser.add_argument(
+        "--candles",
+        type=int,
+        default=800,
+        help="Number of historical candles (default: 800)",
+    )
+    parser.add_argument(
+        "--save",
+        default="chart.html",
+        help="Save chart to file (default: chart.html)",
+    )
+    parser.add_argument(
+        "--poll",
+        type=int,
+        default=30,
+        help="Live mode poll interval in seconds (default: 30)",
+    )
+    parser.add_argument(
+        "--db",
+        default="trading_state.db",
+        help="SQLite database path for live state (default: trading_state.db)",
+    )
+    parser.add_argument(
+        "--log-level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        default="INFO",
+    )
+    parser.add_argument(
+        "--log-json",
+        action="store_true",
+        help="Use structured JSON logging",
+    )
+
+    args = parser.parse_args(argv)
+
+    # ── Logging setup (only at entry point, not module level) ──────────
+    if args.log_json:
+        import json
+
+        class JsonFormatter(logging.Formatter):
+            def format(self, record: logging.LogRecord) -> str:
+                return json.dumps({
+                    "ts": self.formatTime(record),
+                    "level": record.levelname,
+                    "logger": record.name,
+                    "msg": record.getMessage(),
+                })
+
+        handler = logging.StreamHandler()
+        handler.setFormatter(JsonFormatter())
+        logging.root.handlers = [handler]
+    else:
+        logging.basicConfig(
+            level=getattr(logging, args.log_level),
+            format="%(asctime)s | %(levelname)-7s | %(name)s | %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+        logging.getLogger().setLevel(getattr(logging, args.log_level))
+
+    config = StrategyConfig()
+    strategy = _build_strategy(args.strategy, config)
+
+    if args.mode == "historical":
+        return _run_historical(strategy, args)
+    else:
+        return _run_live(strategy, args)
+
+
+def _run_historical(strategy, args) -> int:
+    with BybitFetcher() as fetcher:
+        df = fetcher.fetch_klines(
+            symbol=args.symbol,
+            interval=args.interval,
+            num_candles=args.candles,
+        )
+
+    bt = Backtester(strategy, symbol=args.symbol)
+    result = bt.run(df, interval=args.interval)
+
+    # Print summary
+    print(result.summary())
+
+    # Build chart with indicator columns from prepare()
+    prepared = strategy.prepare(df)
+    signals = [s for t in result.trades for s in _trade_to_signals(t)]
+    build_chart(
+        prepared,
+        signals,
+        title=f"{args.symbol} {args.interval} | {strategy.name} | {result.total_trades} trades",
+        save_path=args.save,
+    )
+
+    return 0
+
+
+def _run_live(strategy, args) -> int:
+    engine = LiveEngine(
+        strategy=strategy,
+        symbol=args.symbol,
+        interval=args.interval,
+        num_candles=args.candles,
+        poll_seconds=args.poll,
+        chart_path=args.save,
+        db_path=args.db,
+    )
+    engine.run()
+    return 0
+
+
+def _trade_to_signals(trade):
+    """Convert a Trade object back to Signal-like dicts for the chart."""
+    from .models import Signal, SignalAction
+
+    signals = []
+    if trade.entry_ts:
+        signals.append(Signal(
+            timestamp=trade.entry_ts,
+            action=SignalAction.ENTRY,
+            direction=trade.direction,
+            price=trade.entry_price,
+            label=f"{trade.direction.value.capitalize()} Entry",
+        ))
+    if trade.exit_ts:
+        signals.append(Signal(
+            timestamp=trade.exit_ts,
+            action=SignalAction.EXIT,
+            direction=trade.direction,
+            price=trade.exit_price,
+            label=f"{trade.direction.value.capitalize()} Exit",
+        ))
+    return signals
+
+
+if __name__ == "__main__":
+    sys.exit(main())
