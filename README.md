@@ -1,4 +1,4 @@
-# entry_exit_points v2.0
+# Common entry/exit approaches for crypto strategies
 
 Production-grade crypto trading strategy framework for Bybit perpetuals.
 
