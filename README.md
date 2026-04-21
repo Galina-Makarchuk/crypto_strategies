@@ -112,3 +112,5 @@ pytest entry_exit_points/tests/test_core.py -v
 | `--db` | `trading_state.db` | SQLite path for live state |
 | `--log-level` | `INFO` | `DEBUG,INFO,WARNING,ERROR` |
 | `--log-json` | off | Structured JSON logging |
+
+License MIT (C) Galina Makarchuk
