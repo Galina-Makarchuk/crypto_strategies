@@ -140,7 +140,7 @@ class TestSwingDetection:
 
 class TestPositionState:
     def test_enter_exit_cycle(self):
-        from entry_exit_points.models import Direction, PositionState, PositionStatus
+        from entry_exit_points.models import Direction, ExitReason, PositionState, PositionStatus
 
         state = PositionState()
         ts = datetime(2025, 1, 1, tzinfo=timezone.utc)
@@ -150,7 +150,7 @@ class TestPositionState:
         assert state.status == PositionStatus.OPEN
         assert state.current_trade is not None
 
-        sig2 = state.exit(ts, 105.0, cost_bps=12.0)
+        sig2 = state.exit(ts, 105.0, cost_bps=12.0, reason=ExitReason.TAKE_PROFIT)
         assert sig2 is not None
         assert state.status == PositionStatus.FLAT
         assert len(state.closed_trades) == 1

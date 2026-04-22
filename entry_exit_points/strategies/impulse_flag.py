@@ -38,7 +38,7 @@ import pandas as pd
 
 from ..indicators import atr as calc_atr
 from ..indicators import ema as calc_ema
-from ..models import Direction, PositionState, StrategyConfig
+from ..models import Direction, ExitReason, PositionState, StrategyConfig
 from .base import BaseStrategy
 
 
@@ -343,7 +343,7 @@ class ImpulseFlagStrategy(BaseStrategy):
 
             # Pessimistic ordering: if stop touched, it wins the bar.
             if stop_hit:
-                state.exit(ts, self._active_stop, cost)
+                state.exit(ts, self._active_stop, cost, ExitReason.STOP_LOSS)
                 self._reset_trade_state()
                 return
 
@@ -353,7 +353,7 @@ class ImpulseFlagStrategy(BaseStrategy):
                     self._active_stop = trade.entry_price
 
             if t2_hit:
-                state.exit(ts, self._t2, cost)
+                state.exit(ts, self._t2, cost, ExitReason.TAKE_PROFIT)
                 self._reset_trade_state()
                 return
             return

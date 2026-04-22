@@ -32,7 +32,7 @@ import numpy as np
 import pandas as pd
 
 from ..indicators import atr as calc_atr
-from ..models import Direction, PositionState, StrategyConfig
+from ..models import Direction, ExitReason, PositionState, StrategyConfig
 from .base import BaseStrategy
 
 
@@ -235,17 +235,17 @@ class ExhaustionReversalStrategy(BaseStrategy):
             trade = state.current_trade
 
             if trade.direction == Direction.SHORT and high_i >= self._stop_price:
-                state.exit(ts, self._stop_price, cost)
+                state.exit(ts, self._stop_price, cost, ExitReason.STOP_LOSS)
                 return
             if trade.direction == Direction.LONG and low_i <= self._stop_price:
-                state.exit(ts, self._stop_price, cost)
+                state.exit(ts, self._stop_price, cost, ExitReason.STOP_LOSS)
                 return
 
             if trade.direction == Direction.SHORT and low_i <= self._target_price:
-                state.exit(ts, self._target_price, cost)
+                state.exit(ts, self._target_price, cost, ExitReason.TAKE_PROFIT)
                 return
             if trade.direction == Direction.LONG and high_i >= self._target_price:
-                state.exit(ts, self._target_price, cost)
+                state.exit(ts, self._target_price, cost, ExitReason.TAKE_PROFIT)
                 return
 
             inv_len = self.config.exhaustion_invalidation_len
@@ -253,11 +253,11 @@ class ExhaustionReversalStrategy(BaseStrategy):
                 if (trade.direction == Direction.SHORT and completed_streak.direction == 1) or (
                     trade.direction == Direction.LONG and completed_streak.direction == -1
                 ):
-                    state.exit(ts, close_i, cost)
+                    state.exit(ts, close_i, cost, ExitReason.INVALIDATION)
                     return
 
             if i - self._entry_bar_idx >= self.config.exhaustion_time_stop_bars:
-                state.exit(ts, close_i, cost)
+                state.exit(ts, close_i, cost, ExitReason.TIME_STOP)
                 return
 
         if state.current_trade is not None:

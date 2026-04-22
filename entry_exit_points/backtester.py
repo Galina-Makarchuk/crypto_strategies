@@ -10,12 +10,13 @@ After the run, produces a typed summary with P&L stats.
 from __future__ import annotations
 
 import logging
+from collections import Counter
 from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
 
-from .models import PositionState, SignalAction, Trade
+from .models import ExitReason, PositionState, SignalAction, Trade
 from .strategies.base import BaseStrategy
 
 logger = logging.getLogger(__name__)
@@ -58,8 +59,16 @@ class BacktestResult:
             f"  Profit factor      : {self.profit_factor:.2f}",
             f"  Max drawdown (bps) : {self.max_drawdown_bps:.1f}",
             f"  Sharpe (approx)    : {self.sharpe_approx:.2f}",
-            f"{'═' * 60}",
         ]
+        reasons = Counter(
+            t.exit_reason.value for t in self.trades if t.exit_reason is not None
+        )
+        if reasons:
+            lines.append(f"  {'─' * 40}")
+            lines.append("  Exits by reason:")
+            for reason, count in reasons.most_common():
+                lines.append(f"    {reason:<17}: {count}")
+        lines.append(f"{'═' * 60}")
         return "\n".join(lines)
 
 
@@ -84,7 +93,7 @@ class Backtester:
         # Force-close any dangling position at last bar
         if state.current_trade is not None:
             cost = self.strategy.config.total_cost_bps()
-            state.exit(prepared.index[-1], prepared["close"].iloc[-1], cost)
+            state.exit(prepared.index[-1], prepared["close"].iloc[-1], cost, ExitReason.FORCE_CLOSE)
             logger.info("Force-closed open position at end of data.")
 
         return self._compute_stats(state, prepared, interval)

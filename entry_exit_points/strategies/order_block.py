@@ -37,7 +37,7 @@ import pandas as pd
 
 from ..indicators import atr as calc_atr
 from ..indicators import ema as calc_ema
-from ..models import Direction, PositionState, StrategyConfig
+from ..models import Direction, ExitReason, PositionState, StrategyConfig
 from .base import BaseStrategy
 
 
@@ -230,20 +230,20 @@ class OrderBlockStrategy(BaseStrategy):
             trade = state.current_trade
             if trade.direction == Direction.LONG:
                 if low_i <= self._active_stop:
-                    state.exit(ts, self._active_stop, cost)
+                    state.exit(ts, self._active_stop, cost, ExitReason.STOP_LOSS)
                     self._reset_trade_state()
                     return
                 if high_i >= self._active_target:
-                    state.exit(ts, self._active_target, cost)
+                    state.exit(ts, self._active_target, cost, ExitReason.TAKE_PROFIT)
                     self._reset_trade_state()
                     return
             else:
                 if high_i >= self._active_stop:
-                    state.exit(ts, self._active_stop, cost)
+                    state.exit(ts, self._active_stop, cost, ExitReason.STOP_LOSS)
                     self._reset_trade_state()
                     return
                 if low_i <= self._active_target:
-                    state.exit(ts, self._active_target, cost)
+                    state.exit(ts, self._active_target, cost, ExitReason.TAKE_PROFIT)
                     self._reset_trade_state()
                     return
             return

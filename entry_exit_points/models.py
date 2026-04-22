@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum, auto
 from typing import Optional
 
@@ -47,6 +47,16 @@ class StrategyName(Enum):
 class RunMode(Enum):
     HISTORICAL = "historical"
     LIVE = "live"
+
+
+class ExitReason(Enum):
+    STOP_LOSS = "stop_loss"
+    TAKE_PROFIT = "take_profit"
+    TRAILING_STOP = "trailing_stop"
+    SIGNAL_FLIP = "signal_flip"
+    TIME_STOP = "time_stop"
+    INVALIDATION = "invalidation"
+    FORCE_CLOSE = "force_close"
 
 
 # ── Validated intervals ────────────────────────────────────────────────────────
@@ -184,10 +194,17 @@ class Trade:
     exit_price: float = 0.0
     pnl_bps: float = 0.0  # net of fees
     peak_price: float = 0.0  # high-water mark (longs) / low-water (shorts)
+    exit_reason: Optional[ExitReason] = None
 
     @property
     def is_closed(self) -> bool:
         return self.exit_ts is not None
+
+    @property
+    def duration(self) -> Optional[timedelta]:
+        if self.entry_ts is None or self.exit_ts is None:
+            return None
+        return self.exit_ts - self.entry_ts
 
 
 @dataclass
@@ -235,13 +252,18 @@ class PositionState:
             self.current_trade.peak_price = min(self.current_trade.peak_price, low)
 
     def exit(
-        self, ts: datetime, price: float, cost_bps: float = 0.0
+        self,
+        ts: datetime,
+        price: float,
+        cost_bps: float = 0.0,
+        reason: ExitReason = ExitReason.FORCE_CLOSE,
     ) -> Signal | None:
         if self.status != PositionStatus.OPEN or self.current_trade is None:
             return None
         trade = self.current_trade
         trade.exit_ts = ts
         trade.exit_price = price
+        trade.exit_reason = reason
 
         # P&L in basis points
         if trade.direction == Direction.LONG:

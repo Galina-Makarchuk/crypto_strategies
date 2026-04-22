@@ -14,7 +14,7 @@ import pandas as pd
 
 from ..indicators import atr as calc_atr
 from ..indicators import supertrend as calc_supertrend
-from ..models import Direction, PositionState, StrategyConfig
+from ..models import Direction, ExitReason, PositionState, StrategyConfig
 from .base import BaseStrategy
 
 
@@ -58,15 +58,19 @@ class InverseSuperTrendStrategy(BaseStrategy):
 
             if trade.direction == Direction.LONG:
                 trailing_stop = trade.peak_price - trail
-                # Exit long when trend flips up (original would enter long here)
-                if flip_up or close < trailing_stop:
-                    state.exit(ts, close, cost)
+                if flip_up:
+                    state.exit(ts, close, cost, ExitReason.SIGNAL_FLIP)
+                    return
+                if close < trailing_stop:
+                    state.exit(ts, close, cost, ExitReason.TRAILING_STOP)
                     return
             elif trade.direction == Direction.SHORT:
                 trailing_stop = trade.peak_price + trail
-                # Exit short when trend flips down (original would enter short here)
-                if flip_down or close > trailing_stop:
-                    state.exit(ts, close, cost)
+                if flip_down:
+                    state.exit(ts, close, cost, ExitReason.SIGNAL_FLIP)
+                    return
+                if close > trailing_stop:
+                    state.exit(ts, close, cost, ExitReason.TRAILING_STOP)
                     return
 
         # ── Entry logic (INVERTED) ─────────────────────────────────────────

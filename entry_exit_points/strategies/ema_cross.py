@@ -9,7 +9,7 @@ from __future__ import annotations
 import pandas as pd
 
 from ..indicators import atr, ema, rsi
-from ..models import Direction, PositionState, StrategyConfig
+from ..models import Direction, ExitReason, PositionState, StrategyConfig
 from .base import BaseStrategy
 
 
@@ -56,13 +56,19 @@ class EMACrossoverStrategy(BaseStrategy):
 
             if trade.direction == Direction.LONG:
                 trailing_stop = trade.peak_price - trail
-                if bearish_cross or close < trailing_stop:
-                    state.exit(ts, close, cost)
+                if bearish_cross:
+                    state.exit(ts, close, cost, ExitReason.SIGNAL_FLIP)
+                    return
+                if close < trailing_stop:
+                    state.exit(ts, close, cost, ExitReason.TRAILING_STOP)
                     return
             elif trade.direction == Direction.SHORT:
                 trailing_stop = trade.peak_price + trail
-                if bullish_cross or close > trailing_stop:
-                    state.exit(ts, close, cost)
+                if bullish_cross:
+                    state.exit(ts, close, cost, ExitReason.SIGNAL_FLIP)
+                    return
+                if close > trailing_stop:
+                    state.exit(ts, close, cost, ExitReason.TRAILING_STOP)
                     return
 
         # ── Entry logic ────────────────────────────────────────────────────

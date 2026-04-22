@@ -18,7 +18,7 @@ from ..indicators import (
     detect_swing_lows,
     merge_price_levels,
 )
-from ..models import Direction, PositionState, StrategyConfig
+from ..models import Direction, ExitReason, PositionState, StrategyConfig
 from .base import BaseStrategy
 
 
@@ -70,18 +70,22 @@ class InverseSwingBreakoutStrategy(BaseStrategy):
 
             if trade.direction == Direction.LONG:
                 trailing_stop = trade.peak_price - trail
-                # Exit long when price crosses above resistance (original would enter long)
                 crossed_above_res = any(close > lvl >= prev_close for lvl in res_levels)
-                if close < trailing_stop or crossed_above_res:
-                    state.exit(ts, close, cost)
+                if close < trailing_stop:
+                    state.exit(ts, close, cost, ExitReason.TRAILING_STOP)
+                    return
+                if crossed_above_res:
+                    state.exit(ts, close, cost, ExitReason.SIGNAL_FLIP)
                     return
 
             elif trade.direction == Direction.SHORT:
                 trailing_stop = trade.peak_price + trail
-                # Exit short when price crosses below support (original would enter short)
                 crossed_below_sup = any(close < lvl <= prev_close for lvl in sup_levels)
-                if close > trailing_stop or crossed_below_sup:
-                    state.exit(ts, close, cost)
+                if close > trailing_stop:
+                    state.exit(ts, close, cost, ExitReason.TRAILING_STOP)
+                    return
+                if crossed_below_sup:
+                    state.exit(ts, close, cost, ExitReason.SIGNAL_FLIP)
                     return
 
         # ── Entry logic (INVERTED) ─────────────────────────────────────────

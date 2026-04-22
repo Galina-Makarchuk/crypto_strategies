@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from .models import Direction, PositionState, PositionStatus, Trade
+from .models import Direction, ExitReason, PositionState, PositionStatus, Trade
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS trade_history (
     exit_price  REAL,
     pnl_bps     REAL,
     peak_price  REAL,
+    exit_reason TEXT,
     created_at  TEXT NOT NULL
 );
 """
@@ -52,6 +53,11 @@ class StateStore:
         self._conn = sqlite3.connect(self._db_path)
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.executescript(_SCHEMA)
+        # Backward-compat: add exit_reason to pre-existing trade_history tables.
+        try:
+            self._conn.execute("ALTER TABLE trade_history ADD COLUMN exit_reason TEXT")
+        except sqlite3.OperationalError:
+            pass  # column already exists
         self._conn.commit()
         logger.info("State store initialised: %s", self._db_path)
 
@@ -119,8 +125,8 @@ class StateStore:
         self._conn.execute(
             """
             INSERT OR REPLACE INTO trade_history
-                (trade_id, direction, entry_ts, entry_price, exit_ts, exit_price, pnl_bps, peak_price, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (trade_id, direction, entry_ts, entry_price, exit_ts, exit_price, pnl_bps, peak_price, exit_reason, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 trade.trade_id,
@@ -131,6 +137,7 @@ class StateStore:
                 trade.exit_price,
                 trade.pnl_bps,
                 trade.peak_price,
+                trade.exit_reason.value if trade.exit_reason else None,
                 now,
             ),
         )
@@ -138,7 +145,7 @@ class StateStore:
 
     def load_trade_history(self, limit: int = 200) -> list[Trade]:
         rows = self._conn.execute(
-            "SELECT trade_id, direction, entry_ts, entry_price, exit_ts, exit_price, pnl_bps, peak_price "
+            "SELECT trade_id, direction, entry_ts, entry_price, exit_ts, exit_price, pnl_bps, peak_price, exit_reason "
             "FROM trade_history ORDER BY created_at DESC LIMIT ?",
             (limit,),
         ).fetchall()
@@ -155,6 +162,7 @@ class StateStore:
                     exit_price=r[5] or 0.0,
                     pnl_bps=r[6] or 0.0,
                     peak_price=r[7] or 0.0,
+                    exit_reason=ExitReason(r[8]) if r[8] else None,
                 )
             )
         return trades
