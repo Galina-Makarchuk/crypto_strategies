@@ -1,5 +1,6 @@
 from .base import BaseStrategy
 from .ema_cross import EMACrossoverStrategy
+from .ema_cross_inv import InverseEMACrossoverStrategy
 from .exhaustion_reversal import ExhaustionReversalStrategy
 from .impulse_flag import ImpulseFlagStrategy
 from .order_block import OrderBlockStrategy
@@ -14,6 +15,7 @@ __all__ = [
     "AdaptiveSuperTrendStrategy",
     "BaseStrategy",
     "EMACrossoverStrategy",
+    "InverseEMACrossoverStrategy",
     "ExhaustionReversalStrategy",
     "ImpulseFlagStrategy",
     "InverseOrderBlockStrategy",

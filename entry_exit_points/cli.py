@@ -15,7 +15,7 @@ from .backtester import Backtester
 from .fetcher import BybitFetcher
 from .live import LiveEngine
 from .models import VALID_INTERVALS, StrategyConfig, StrategyName
-from .strategies import AdaptiveSuperTrendStrategy, EMACrossoverStrategy, ExhaustionReversalStrategy, ImpulseFlagStrategy, InverseOrderBlockStrategy, InverseSuperTrendStrategy, OrderBlockStrategy, SuperTrendStrategy, SwingBreakoutStrategy, InverseSwingBreakoutStrategy
+from .strategies import AdaptiveSuperTrendStrategy, EMACrossoverStrategy, InverseEMACrossoverStrategy, ExhaustionReversalStrategy, ImpulseFlagStrategy, InverseOrderBlockStrategy, InverseSuperTrendStrategy, OrderBlockStrategy, SuperTrendStrategy, SwingBreakoutStrategy, InverseSwingBreakoutStrategy
 from .visualization import build_chart
 
 logger = logging.getLogger(__name__)
@@ -26,6 +26,7 @@ def _build_strategy(name: str, config: StrategyConfig):
         StrategyName.SWING.value: SwingBreakoutStrategy,
         StrategyName.SWING_INV.value: InverseSwingBreakoutStrategy,
         StrategyName.EMA_CROSS.value: EMACrossoverStrategy,
+        StrategyName.EMA_CROSS_INV.value: InverseEMACrossoverStrategy,
         StrategyName.SUPERTREND.value: SuperTrendStrategy,
         StrategyName.SUPERTREND_INV.value: InverseSuperTrendStrategy,
         StrategyName.SUPERTREND_ADAPTIVE.value: AdaptiveSuperTrendStrategy,

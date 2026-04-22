@@ -35,6 +35,7 @@ class StrategyName(Enum):
     SWING = "swing"
     SWING_INV = "swing_inv"
     EMA_CROSS = "ema"
+    EMA_CROSS_INV = "ema_inv"
     SUPERTREND = "supertrend"
     SUPERTREND_INV = "supertrend_inv"
     SUPERTREND_ADAPTIVE = "supertrend_adaptive"
