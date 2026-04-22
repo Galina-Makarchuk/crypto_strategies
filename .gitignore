@@ -26,6 +26,9 @@ env/
 # Logs
 *.log
 
+# CLI default chart output (root only; notebook charts in strategy_notebooks/ are tracked)
+/chart.html
+
 # OS
 .DS_Store
 Thumbs.db
