@@ -1,6 +1,6 @@
 # Entry/exit approaches in crypto trading strategies.
 
-A lightweight research repo for comparing crypto trading strategies with a focus on how they define entry and exit points.
+A research repo for comparing crypto trading strategies with a focus on how they define entry and exit points.
 
 ## Overview
 
