@@ -87,10 +87,11 @@ class BybitFetcher:
         interval: str,
         limit: int,
         end_ms: int | None = None,
+        category: str = "linear",
     ) -> list[list[str]]:
         self._rate_limiter.wait()
         params: dict[str, Any] = {
-            "category": "linear",
+            "category": category,
             "symbol": symbol,
             "interval": interval,
             "limit": min(limit, self.MAX_LIMIT),
@@ -121,12 +122,15 @@ class BybitFetcher:
         num_candles: int = 1000,
         start_time: str | pd.Timestamp | None = None,
         end_time: str | pd.Timestamp | None = None,
+        category: str = "linear",
     ) -> pd.DataFrame:
         """Fetch historical klines.
 
         When `start_time` is set, paginate the full [start_time, end_time] window
         (end_time defaults to now); `num_candles` is ignored in this mode.
         Otherwise fetch the most recent `num_candles` ending at `end_time` (or now).
+
+        `category` selects the Bybit product type ("linear" or "inverse").
 
         Time inputs accept anything `pd.Timestamp` parses (ISO strings, datetimes);
         naive values are treated as UTC.
@@ -163,7 +167,7 @@ class BybitFetcher:
                     break
                 batch_limit = remaining + 100
 
-            batch = self._fetch_batch(symbol, interval, batch_limit, cursor_end_ms)
+            batch = self._fetch_batch(symbol, interval, batch_limit, cursor_end_ms, category)
             if not batch:
                 break
             all_data.extend(batch)

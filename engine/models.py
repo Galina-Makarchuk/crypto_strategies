@@ -78,6 +78,19 @@ def validate_interval(interval: str) -> str:
     return interval
 
 
+# ── Validated product categories ────────────────────────────────────────────────
+
+VALID_CATEGORIES = frozenset({"linear", "inverse"})
+
+
+def validate_category(category: str) -> str:
+    if category not in VALID_CATEGORIES:
+        raise ValueError(
+            f"Invalid category '{category}'. Must be one of: {sorted(VALID_CATEGORIES)}"
+        )
+    return category
+
+
 # ── Configuration ──────────────────────────────────────────────────────────────
 
 

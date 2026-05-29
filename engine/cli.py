@@ -12,9 +12,9 @@ import logging
 import sys
 
 from .backtester import Backtester
-from .fetcher import BybitFetcher
+from .data_configurator import DataSpec, load_data, save_result
 from .live import LiveEngine
-from .models import VALID_INTERVALS, StrategyConfig, StrategyName
+from .models import VALID_CATEGORIES, VALID_INTERVALS, StrategyConfig, StrategyName
 from .strategies import AdaptiveSuperTrendStrategy, EMACrossoverStrategy, InverseEMACrossoverStrategy, ExhaustionReversalStrategy, ImpulseFlagStrategy, InverseOrderBlockStrategy, InverseSuperTrendStrategy, MLSwingZigZagStrategy, OrderBlockStrategy, SuperTrendStrategy, SwingBreakoutStrategy, InverseSwingBreakoutStrategy, SwingZigZagStrategy, VWAPBandsStrategy
 from .visualization import build_chart
 
@@ -75,7 +75,23 @@ def main(argv: list[str] | None = None) -> int:
         "--candles",
         type=int,
         default=800,
-        help="Number of historical candles (default: 800)",
+        help="Number of historical candles (default: 800; ignored when --start is set)",
+    )
+    parser.add_argument(
+        "--category",
+        default="linear",
+        choices=sorted(VALID_CATEGORIES),
+        help="Bybit product type (default: linear)",
+    )
+    parser.add_argument(
+        "--start",
+        default=None,
+        help="Historical range start, ISO e.g. 2026-03-20 (range mode; --candles ignored)",
+    )
+    parser.add_argument(
+        "--end",
+        default=None,
+        help="Historical range end, ISO (defaults to now)",
     )
     parser.add_argument(
         "--save",
@@ -140,18 +156,27 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _run_historical(strategy, args) -> int:
-    with BybitFetcher() as fetcher:
-        df = fetcher.fetch_klines(
-            symbol=args.symbol,
-            interval=args.interval,
-            num_candles=args.candles,
-        )
+    # Pull candles through the shared cache (data/ohlcv/…) — the same source of
+    # truth notebooks use, so repeat runs are instant and datasets stay identical.
+    spec = DataSpec(
+        symbol=args.symbol,
+        interval=args.interval,
+        category=args.category,
+        num_candles=args.candles,
+        start=args.start,
+        end=args.end,
+    )
+    df = load_data(spec)
 
     bt = Backtester(strategy, symbol=args.symbol)
     result = bt.run(df, interval=args.interval)
 
     # Print summary
     print(result.summary())
+
+    # Persist results (metrics JSON + trades CSV), grouped by dataset signature.
+    json_path = save_result(result, spec)
+    print(f"Results saved to {json_path.parent}")
 
     # Build chart with indicator columns from prepare()
     prepared = strategy.prepare(df)
@@ -171,6 +196,7 @@ def _run_live(strategy, args) -> int:
         strategy=strategy,
         symbol=args.symbol,
         interval=args.interval,
+        category=args.category,
         num_candles=args.candles,
         poll_seconds=args.poll,
         chart_path=args.save,

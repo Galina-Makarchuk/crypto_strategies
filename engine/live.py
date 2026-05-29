@@ -21,7 +21,7 @@ from typing import Optional
 import pandas as pd
 
 from .fetcher import BybitFetcher
-from .models import PositionState, StrategyConfig, validate_interval
+from .models import PositionState, StrategyConfig, validate_category, validate_interval
 from .persistence import StateStore
 from .strategies.base import BaseStrategy
 from .visualization import build_chart
@@ -40,15 +40,18 @@ class LiveEngine:
         strategy: BaseStrategy,
         symbol: str = "BTCUSDT",
         interval: str = "15",
+        category: str = "linear",
         num_candles: int = 500,
         poll_seconds: int = 30,
         chart_path: str = "live_chart.html",
         db_path: str = "trading_state.db",
     ):
         validate_interval(interval)
+        validate_category(category)
         self.strategy = strategy
         self.symbol = symbol
         self.interval = interval
+        self.category = category
         self.num_candles = num_candles
         self.poll_seconds = poll_seconds
         self.chart_path = chart_path
@@ -70,7 +73,8 @@ class LiveEngine:
 
     def run(self) -> None:
         logger.info(
-            "LIVE MODE started | %s %s | %s | poll=%ds",
+            "LIVE MODE started | %s %s %s | %s | poll=%ds",
+            self.category,
             self.symbol,
             self.interval,
             self.strategy.name,
@@ -113,6 +117,7 @@ class LiveEngine:
             symbol=self.symbol,
             interval=self.interval,
             num_candles=self.num_candles,
+            category=self.category,
         )
 
         # Prepare indicators
