@@ -10,6 +10,9 @@ from .supertrend_adaptive import AdaptiveSuperTrendStrategy
 from .supertrend_inv import InverseSuperTrendStrategy
 from .swing import SwingBreakoutStrategy
 from .swing_inv import InverseSwingBreakoutStrategy
+from .swing_zigzag import SwingZigZagStrategy
+from .swing_zigzag_ml import MLSwingZigZagStrategy
+from .vwap_bands import VWAPBandsStrategy
 
 __all__ = [
     "AdaptiveSuperTrendStrategy",
@@ -20,8 +23,11 @@ __all__ = [
     "ImpulseFlagStrategy",
     "InverseOrderBlockStrategy",
     "InverseSuperTrendStrategy",
+    "MLSwingZigZagStrategy",
     "OrderBlockStrategy",
     "SuperTrendStrategy",
     "SwingBreakoutStrategy",
     "InverseSwingBreakoutStrategy",
+    "SwingZigZagStrategy",
+    "VWAPBandsStrategy",
 ]

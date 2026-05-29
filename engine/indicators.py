@@ -33,6 +33,54 @@ def atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
     # return atr_ewm
 
 
+# ── VWAP Stdev Bands ───────────────────────────────────────────────────────────
+
+
+def vwap_stdev_bands(
+    df: pd.DataFrame,
+    devs: tuple[float, ...] = (1.28, 2.01, 2.51, 3.09, 4.01),
+    session: str = "D",
+) -> tuple[pd.Series, list[tuple[pd.Series, pd.Series]]]:
+    """Session-anchored VWAP with volume-weighted standard-deviation bands.
+
+    Port of the TradingView "VWAP Stdev Bands v2 Mod" indicator. The VWAP and
+    its stdev reset at each session boundary (default: UTC day). Both are
+    causal — at bar i they only depend on bars 0..i within the current session
+    — so look-ahead is structurally impossible.
+
+    Args:
+        df: OHLCV frame with a tz-aware DatetimeIndex.
+        devs: stdev multipliers, inner-to-outer (e.g. the last entry is the
+            furthest band).
+        session: pandas floor alias for the session anchor (e.g. "D", "h", "W").
+
+    Returns:
+        (vwap, bands) where bands[k] = (upper_k, lower_k) for devs[k].
+    """
+    if not isinstance(df.index, pd.DatetimeIndex):
+        raise TypeError("vwap_stdev_bands requires a DatetimeIndex")
+
+    hl2 = (df["high"] + df["low"]) / 2.0
+    vol = df["volume"]
+
+    session_id = df.index.floor(session)
+    pv_cum = (hl2 * vol).groupby(session_id).cumsum()
+    v_cum = vol.groupby(session_id).cumsum()
+    pv2_cum = (hl2 * hl2 * vol).groupby(session_id).cumsum()
+
+    safe_v = v_cum.where(v_cum > 0, np.nan)
+    vwap = (pv_cum / safe_v).rename("vwap")
+    variance = (pv2_cum / safe_v) - vwap * vwap
+    stdev = np.sqrt(variance.clip(lower=0).fillna(0.0))
+
+    bands: list[tuple[pd.Series, pd.Series]] = []
+    for k, mult in enumerate(devs):
+        upper = (vwap + mult * stdev).rename(f"vwap_upper_{k}")
+        lower = (vwap - mult * stdev).rename(f"vwap_lower_{k}")
+        bands.append((upper, lower))
+    return vwap, bands
+
+
 # ── EMA ────────────────────────────────────────────────────────────────────────
 
 # adjust=False gives the classic recursive EMA used in technical analysis across almost all trading platforms; better for real intraday trading

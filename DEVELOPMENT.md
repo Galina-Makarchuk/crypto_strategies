@@ -1,4 +1,4 @@
-# entry_exit_points v2.0
+# engine v2.0
 
 Production-grade crypto trading strategy framework for Bybit perpetuals.
 
@@ -8,22 +8,22 @@ Production-grade crypto trading strategy framework for Bybit perpetuals.
 pip install -r requirements.txt
 
 # Historical backtest (SuperTrend, 15m, 800 candles)
-python -m entry_exit_points --strategy supertrend --interval 15 --candles 800
+python -m engine --strategy supertrend --interval 15 --candles 800
 
 # EMA crossover backtest
-python -m entry_exit_points --strategy ema --interval 60 --candles 1000 --save ema_chart.html
+python -m engine --strategy ema --interval 60 --candles 1000 --save ema_chart.html
 
 # Live mode with state persistence
-python -m entry_exit_points --strategy supertrend --mode live --interval 5 --poll 30
+python -m engine --strategy supertrend --mode live --interval 5 --poll 30
 
 # Structured JSON logging (for log shippers)
-python -m entry_exit_points --strategy ema --log-json --log-level DEBUG
+python -m engine --strategy ema --log-json --log-level DEBUG
 ```
 
 ## Architecture
 
 ```
-entry_exit_points/
+engine/
 ├── models.py                    # Typed enums, configs, Signal/Trade/PositionState
 ├── indicators.py                # Pure functions: ATR, EMA, RSI, ADX, SuperTrend, swing detection
 ├── fetcher.py                   # Bybit v5 API client with retry + rate limiting
@@ -95,7 +95,7 @@ fee + 2 bps slippage per side = 12 bps round-trip.
 ## Running Tests
 
 ```bash
-pytest entry_exit_points/tests/test_core.py -v
+pytest engine/tests/test_core.py -v
 ```
 
 ## CLI Options

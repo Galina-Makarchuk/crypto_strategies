@@ -43,6 +43,9 @@ class StrategyName(Enum):
     IMPULSE_FLAG = "impulse_flag"
     ORDER_BLOCK = "order_block"
     ORDER_BLOCK_INV = "order_block_inv"
+    VWAP_BANDS = "vwap_bands"
+    SWING_ZIGZAG = "swing_zigzag"
+    SWING_ZIGZAG_ML = "swing_zigzag_ml"
 
 
 class RunMode(Enum):
@@ -153,6 +156,28 @@ class StrategyConfig:
     ob_ema_slow: int = 20                    # LTF slow EMA (confirmation cross)
     ob_stop_buffer_pct: float = 0.005        # stop buffer beyond OB extreme
     ob_rr: float = 2.5                       # fixed reward:risk on target
+
+    # VWAP Stdev Bands strategy (defaults mirror the TradingView "v2 Mod" preset)
+    vwap_band_devs: tuple[float, ...] = (1.28, 2.01, 2.51, 3.09, 4.01)
+    vwap_session: str = "D"                  # session anchor for VWAP reset
+    vwap_entry_band: int = 4                 # 0-indexed; default = furthest band
+
+    # ATR-prominence ZigZag swing strategy
+    # See engine/swings.py for the detector contract.
+    swing_zz_atr_period: int = 14
+    swing_zz_min_prominence_atr: float = 1.5
+    swing_zz_min_bars_between: int = 3
+    swing_zz_vol_lookback: int = 50
+    swing_zz_min_score: float = 0.0
+    swing_zz_use_stop: bool = True
+    swing_zz_stop_atr_mult: float = 3.0
+
+    # ML swing-pivot classifier strategy.
+    # ml_model_path is resolved relative to the repo root if not absolute.
+    ml_model_path: str = "ml_models/swing_zz_ml.joblib"
+    ml_p_threshold: float = 0.55
+    ml_use_stop: bool = True
+    ml_stop_atr_mult: float = 3.0
 
     # Costs (basis points)
     # Bybit's taker fee is 0.04% per trade. 1 basis point = 0.01%, so 4 bps = 0.04%

@@ -29,6 +29,10 @@ env/
 # CLI default chart output (root only; notebook charts in strategy_notebooks/ are tracked)
 /chart.html
 
+# ML model artifacts and cached training data (large, machine-specific)
+/ml_models/
+/data/
+
 # OS
 .DS_Store
 Thumbs.db

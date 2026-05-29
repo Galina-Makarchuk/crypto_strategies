@@ -1,8 +1,8 @@
 """CLI entry point.
 
 Usage:
-    python -m entry_exit_points --strategy supertrend --mode historical --interval 15 --candles 800
-    python -m entry_exit_points --strategy ema --mode live --interval 5 --poll 30
+    python -m engine --strategy supertrend --mode historical --interval 15 --candles 800
+    python -m engine --strategy ema --mode live --interval 5 --poll 30
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from .backtester import Backtester
 from .fetcher import BybitFetcher
 from .live import LiveEngine
 from .models import VALID_INTERVALS, StrategyConfig, StrategyName
-from .strategies import AdaptiveSuperTrendStrategy, EMACrossoverStrategy, InverseEMACrossoverStrategy, ExhaustionReversalStrategy, ImpulseFlagStrategy, InverseOrderBlockStrategy, InverseSuperTrendStrategy, OrderBlockStrategy, SuperTrendStrategy, SwingBreakoutStrategy, InverseSwingBreakoutStrategy
+from .strategies import AdaptiveSuperTrendStrategy, EMACrossoverStrategy, InverseEMACrossoverStrategy, ExhaustionReversalStrategy, ImpulseFlagStrategy, InverseOrderBlockStrategy, InverseSuperTrendStrategy, MLSwingZigZagStrategy, OrderBlockStrategy, SuperTrendStrategy, SwingBreakoutStrategy, InverseSwingBreakoutStrategy, SwingZigZagStrategy, VWAPBandsStrategy
 from .visualization import build_chart
 
 logger = logging.getLogger(__name__)
@@ -34,6 +34,9 @@ def _build_strategy(name: str, config: StrategyConfig):
         StrategyName.IMPULSE_FLAG.value: ImpulseFlagStrategy,
         StrategyName.ORDER_BLOCK.value: OrderBlockStrategy,
         StrategyName.ORDER_BLOCK_INV.value: InverseOrderBlockStrategy,
+        StrategyName.VWAP_BANDS.value: VWAPBandsStrategy,
+        StrategyName.SWING_ZIGZAG.value: SwingZigZagStrategy,
+        StrategyName.SWING_ZIGZAG_ML.value: MLSwingZigZagStrategy,
     }
     cls = strategies.get(name)
     if cls is None:

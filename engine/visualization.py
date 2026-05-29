@@ -121,6 +121,100 @@ def build_chart(
                 col=1,
             )
 
+    if "swing_pivot_side" in df.columns and "swing_pivot_idx" in df.columns:
+        confirmed = df[df["swing_pivot_side"].astype(str) != ""]
+        if len(confirmed) > 0:
+            pivots_sorted = confirmed.sort_values("swing_pivot_idx")
+            zigzag_x = [df.index[int(idx)] for idx in pivots_sorted["swing_pivot_idx"]]
+            zigzag_y = pivots_sorted["swing_pivot_price"].tolist()
+            fig.add_trace(
+                go.Scatter(
+                    x=zigzag_x,
+                    y=zigzag_y,
+                    mode="lines",
+                    name="Swing ZigZag",
+                    line=dict(color="rgba(148,163,184,0.6)", width=1.4, dash="dot"),
+                    hoverinfo="skip",
+                ),
+                row=1,
+                col=1,
+            )
+            for side, color, symbol in [
+                ("high", "#ef4444", "triangle-down"),
+                ("low", "#22c55e", "triangle-up"),
+            ]:
+                side_rows = confirmed[confirmed["swing_pivot_side"] == side]
+                if len(side_rows) == 0:
+                    continue
+                xs = [df.index[int(idx)] for idx in side_rows["swing_pivot_idx"]]
+                ys = side_rows["swing_pivot_price"].tolist()
+                hovertext = [
+                    f"prom={p:.2f}σ<br>score={s:.2f}"
+                    for p, s in zip(
+                        side_rows["swing_prominence_atr"],
+                        side_rows["swing_score"],
+                    )
+                ]
+                fig.add_trace(
+                    go.Scatter(
+                        x=xs,
+                        y=ys,
+                        mode="markers",
+                        name=f"Swing {side}",
+                        marker=dict(
+                            symbol=symbol,
+                            size=12,
+                            color=color,
+                            line=dict(width=1.2, color="black"),
+                        ),
+                        text=hovertext,
+                        hovertemplate="%{x}<br>%{y:,.2f}<br>%{text}<extra></extra>",
+                    ),
+                    row=1,
+                    col=1,
+                )
+
+    if "vwap" in df.columns:
+        fig.add_trace(
+            go.Scatter(
+                x=df.index,
+                y=df["vwap"],
+                mode="lines",
+                name="VWAP",
+                line=dict(width=1.6, color="#a3a3a3"),
+            ),
+            row=1,
+            col=1,
+        )
+        upper_cols = sorted(c for c in df.columns if c.startswith("vwap_upper_"))
+        lower_cols = sorted(c for c in df.columns if c.startswith("vwap_lower_"))
+        for col in upper_cols:
+            fig.add_trace(
+                go.Scatter(
+                    x=df.index,
+                    y=df[col],
+                    mode="lines",
+                    name=col.replace("_", " "),
+                    line=dict(width=1, color="rgba(239,68,68,0.55)"),
+                    showlegend=False,
+                ),
+                row=1,
+                col=1,
+            )
+        for col in lower_cols:
+            fig.add_trace(
+                go.Scatter(
+                    x=df.index,
+                    y=df[col],
+                    mode="lines",
+                    name=col.replace("_", " "),
+                    line=dict(width=1, color="rgba(34,197,94,0.55)"),
+                    showlegend=False,
+                ),
+                row=1,
+                col=1,
+            )
+
     # ── Batched signal markers ─────────────────────────────────────────────
     grouped: dict[tuple, list[Signal]] = defaultdict(list)
     for sig in signals:
