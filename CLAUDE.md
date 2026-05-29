@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Crypto trading strategy framework for Bybit linear perpetuals. Runs historical backtests or a live poll loop from a single CLI. Python package in [engine/](engine/); exploratory notebooks in [strategy_notebooks/](strategy_notebooks/).
+Crypto trading strategy framework for Bybit linear & inverse perpetuals. Runs historical backtests or a live poll loop from a single CLI. Python package in [engine/](engine/); exploratory notebooks in [strategy_notebooks/](strategy_notebooks/).
 
 ## Common commands
 
@@ -12,8 +12,11 @@ Crypto trading strategy framework for Bybit linear perpetuals. Runs historical b
 # Install deps into the committed venv
 pip install -r requirements.txt
 
-# Historical backtest
+# Historical backtest (candles cached to data/ohlcv/; results saved to data/results/<dataset>/)
 python -m engine --strategy supertrend --interval 15 --candles 800
+
+# Explicit date range, on the inverse market
+python -m engine --strategy supertrend --interval 15 --start 2026-01-01 --end 2026-04-01 --category inverse
 
 # Live mode (SQLite state persistence, poll loop)
 python -m engine --strategy supertrend --mode live --interval 5 --poll 30
@@ -26,7 +29,7 @@ pytest engine/tests/test_core.py -v
 pytest engine/tests/test_core.py::TestATR::test_atr_shape -v   # single test
 ```
 
-Valid `--strategy` values live on [StrategyName](engine/models.py#L34) (`swing`, `swing_inv`, `ema`, `supertrend`, `supertrend_inv`, `supertrend_adaptive`, `exhaustion_reversal`). Valid intervals: [VALID_INTERVALS](engine/models.py#L51).
+Valid `--strategy` values live on [StrategyName](engine/models.py) — 14 strategies incl. `swing`(+`_inv`), `ema`(+`_inv`), `supertrend`(+`_inv`/`_adaptive`), `exhaustion_reversal`, `impulse_flag`, `order_block`(+`_inv`), `vwap_bands`, `swing_zigzag`(+`_ml`). Valid intervals: [VALID_INTERVALS](engine/models.py); valid `--category`: `linear`, `inverse`.
 
 ## Architecture — the big picture
 
@@ -60,7 +63,11 @@ All tunable numbers (periods, multipliers, fees, risk %, strategy-specific knobs
 
 ### Fetcher contract
 
-[BybitFetcher.fetch_klines()](engine/fetcher.py#L117) always returns a **timezone-aware UTC** DataFrame indexed by timestamp with columns `open, high, low, close, volume, turnover`. Naive timestamps are bugs — every downstream component assumes UTC.
+[BybitFetcher.fetch_klines()](engine/fetcher.py#L117) always returns a **timezone-aware UTC** DataFrame indexed by timestamp with columns `open, high, low, close, volume, turnover`. Naive timestamps are bugs — every downstream component assumes UTC. It accepts a `category` argument (`linear` | `inverse`, default `linear`) — the only place the Bybit product type enters the request.
+
+### Data is configured once, cached, and reused
+
+[engine/data_configurator.py](engine/data_configurator.py) is the single source of truth for market data. Edit the `ACTIVE` `DataSpec` block once — symbol, interval, `category` (`linear`/`inverse`), and either `num_candles` or `start`/`end` — and every notebook, script, and CLI run uses it. `load_data()` fetches via `BybitFetcher` and caches parquet under `data/ohlcv/<category>/…` with a JSON provenance sidecar (pinned `[start, end]` ranges are immutable; count/open-ended windows refetch after one bar interval; `refresh=True` forces). `save_result(result, spec)` persists each backtest to `data/results/<dataset_signature>/<strategy>.json` + `<strategy>_trades.csv`. **Go through `load_data()` — do not instantiate `BybitFetcher` directly.** All of `data/` is git-ignored.
 
 ## Adding a new strategy
 
@@ -71,4 +78,8 @@ All tunable numbers (periods, multipliers, fees, risk %, strategy-specific knobs
 
 ## Notebooks
 
-[strategy_notebooks/](strategy_notebooks/) is where new strategy ideas are prototyped before being ported into [strategies/](engine/strategies/). [analysis.ipynb](analysis.ipynb) at the repo root is for ad-hoc result analysis. Notebooks are not part of the test surface.
+[strategy_notebooks/](strategy_notebooks/) is where new strategy ideas are prototyped before being ported into [strategies/](engine/strategies/). [analysis.ipynb](analysis.ipynb) at the repo root is for ad-hoc result analysis. Notebooks are not part of the test surface. They load candles via `load_data()` and persist results via `save_result(result, ACTIVE)` (both from [data_configurator.py](engine/data_configurator.py)) rather than hardcoding symbol/interval or instantiating `BybitFetcher`. The two ML notebooks (`swing_zigzag_ml*`) intentionally keep their own pickle cache for their fixed multi-year training window.
+
+## Plans
+
+- [docs/config-split-plan.md](docs/config-split-plan.md) — proposed (not yet implemented) split of the config surface into `strategy_configurator.py` (per-strategy params + sweeps) and `trade_configurator.py` (direction / risk / costs / stops).
