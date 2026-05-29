@@ -213,12 +213,3 @@ class BybitFetcher:
         else:
             logger.info("Loaded %d candles [%s → %s]", len(df), df.index[0], df.index[-1])
         return df
-
-    def fetch_latest(
-        self,
-        symbol: str = "BTCUSDT",
-        interval: str = "15",
-        num_candles: int = 3,
-    ) -> pd.DataFrame:
-        """Lightweight fetch for live-mode tail updates."""
-        return self.fetch_klines(symbol=symbol, interval=interval, num_candles=num_candles)
