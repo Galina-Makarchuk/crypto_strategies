@@ -8,6 +8,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import logging
 import sys
 
@@ -15,10 +16,16 @@ from .backtester import Backtester
 from .data_configurator import DataSpec, load_data, save_result
 from .live import LiveEngine
 from .models import VALID_CATEGORIES, VALID_INTERVALS, StrategyConfig, StrategyName
+from .trade_configurator import ACTIVE_TRADE, SizingMode, TradeDirection, TradingConfig
 from .strategies import AdaptiveSuperTrendStrategy, EMACrossoverStrategy, InverseEMACrossoverStrategy, ExhaustionReversalStrategy, ImpulseFlagStrategy, InverseOrderBlockStrategy, InverseSuperTrendStrategy, MLSwingZigZagStrategy, OrderBlockStrategy, SuperTrendStrategy, SwingBreakoutStrategy, InverseSwingBreakoutStrategy, SwingZigZagStrategy, VWAPBandsStrategy
 from .visualization import build_chart
 
 logger = logging.getLogger(__name__)
+
+# Sentinel for trade flags: distinguishes "user didn't pass this flag" from any
+# real value, so an omitted flag inherits ACTIVE_TRADE rather than a hardcoded
+# default. (None can't serve here — it's a valid value for the optional knobs.)
+_UNSET = object()
 
 
 def _build_strategy(name: str, config: StrategyConfig):
@@ -42,6 +49,24 @@ def _build_strategy(name: str, config: StrategyConfig):
     if cls is None:
         raise ValueError(f"Unknown strategy '{name}'. Available: {list(strategies.keys())}")
     return cls(config)
+
+
+def _build_trading_config(args) -> TradingConfig:
+    """Start from ACTIVE_TRADE and override only the trade flags the user
+    explicitly passed (anything still ``_UNSET`` inherits ACTIVE_TRADE)."""
+    overrides = {}
+    for field in (
+        "initial_equity", "position_size_bps", "leverage", "risk_per_trade_bps",
+        "fee_bps", "slippage_bps", "max_daily_loss_bps", "max_holding_bars",
+    ):
+        val = getattr(args, field)
+        if val is not _UNSET:
+            overrides[field] = val
+    if args.direction is not _UNSET:
+        overrides["direction"] = TradeDirection(args.direction)
+    if args.sizing_mode is not _UNSET:
+        overrides["sizing_mode"] = SizingMode(args.sizing_mode)
+    return dataclasses.replace(ACTIVE_TRADE, **overrides)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -120,6 +145,54 @@ def main(argv: list[str] | None = None) -> int:
         help="Use structured JSON logging",
     )
 
+    # ── Trade-level parameters (TradingConfig) ─────────────────────────────
+    # Defaults are the ACTIVE_TRADE block in trade_configurator.py — a flag only
+    # overrides ACTIVE_TRADE when explicitly passed (see _UNSET). This keeps
+    # ACTIVE_TRADE the single source of truth across notebooks AND the CLI.
+    trade = parser.add_argument_group(
+        "trade parameters", "Omitted flags inherit the ACTIVE_TRADE block."
+    )
+    trade.add_argument(
+        "--initial-equity", type=float, default=_UNSET,
+        help="Starting account equity in quote ccy",
+    )
+    trade.add_argument(
+        "--position-size-bps", type=float, default=_UNSET,
+        help="Notional per trade as bps of equity, 10000=100%%",
+    )
+    trade.add_argument(
+        "--leverage", type=float, default=_UNSET,
+        help="Leverage multiplier on notional",
+    )
+    trade.add_argument(
+        "--fee-bps", type=float, default=_UNSET,
+        help="Taker fee per side in bps; Bybit 0.04%%=4",
+    )
+    trade.add_argument(
+        "--slippage-bps", type=float, default=_UNSET,
+        help="Estimated slippage per side in bps",
+    )
+    trade.add_argument(
+        "--max-daily-loss-bps", type=float, default=_UNSET,
+        help="Halt entries after this realized loss (bps) in a UTC day",
+    )
+    trade.add_argument(
+        "--max-holding-bars", type=int, default=_UNSET,
+        help="Force-close a trade after this many bars",
+    )
+    trade.add_argument(
+        "--direction", choices=[d.value for d in TradeDirection], default=_UNSET,
+        help="Allowed trade sides (long/short/both)",
+    )
+    trade.add_argument(
+        "--sizing-mode", choices=[m.value for m in SizingMode], default=_UNSET,
+        help="fixed = position_size_bps; risk = risk_per_trade_bps (stop-where-available)",
+    )
+    trade.add_argument(
+        "--risk-per-trade-bps", type=float, default=_UNSET,
+        help="Equity risked per trade in risk mode, bps (100 = 1%%)",
+    )
+
     args = parser.parse_args(argv)
 
     # ── Logging setup (only at entry point, not module level) ──────────
@@ -148,14 +221,15 @@ def main(argv: list[str] | None = None) -> int:
 
     config = StrategyConfig()
     strategy = _build_strategy(args.strategy, config)
+    trading_config = _build_trading_config(args)
 
     if args.mode == "historical":
-        return _run_historical(strategy, args)
+        return _run_historical(strategy, trading_config, args)
     else:
-        return _run_live(strategy, args)
+        return _run_live(strategy, trading_config, args)
 
 
-def _run_historical(strategy, args) -> int:
+def _run_historical(strategy, trading_config, args) -> int:
     # Pull candles through the shared cache (data/ohlcv/…) — the same source of
     # truth notebooks use, so repeat runs are instant and datasets stay identical.
     spec = DataSpec(
@@ -168,7 +242,7 @@ def _run_historical(strategy, args) -> int:
     )
     df = load_data(spec)
 
-    bt = Backtester(strategy, symbol=args.symbol)
+    bt = Backtester(strategy, symbol=args.symbol, trading_config=trading_config)
     result = bt.run(df, interval=args.interval)
 
     # Print summary
@@ -191,7 +265,7 @@ def _run_historical(strategy, args) -> int:
     return 0
 
 
-def _run_live(strategy, args) -> int:
+def _run_live(strategy, trading_config, args) -> int:
     engine = LiveEngine(
         strategy=strategy,
         symbol=args.symbol,
@@ -201,6 +275,7 @@ def _run_live(strategy, args) -> int:
         poll_seconds=args.poll,
         chart_path=args.save,
         db_path=args.db,
+        trading_config=trading_config,
     )
     engine.run()
     return 0

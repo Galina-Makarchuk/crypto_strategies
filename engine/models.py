@@ -192,19 +192,11 @@ class StrategyConfig:
     ml_use_stop: bool = True
     ml_stop_atr_mult: float = 3.0
 
-    # Costs (basis points)
-    # Bybit's taker fee is 0.04% per trade. 1 basis point = 0.01%, so 4 bps = 0.04%
-    # Estimated 0.02% price slip per trade from the difference between the price you see and the price you actually fill at (spread, latency, orderbook depth)
-    fee_bps: float = 4.0  # taker fee per side
-    slippage_bps: float = 2.0
-
-    # Risk management
-    risk_per_trade_pct: float = 1.0  # % of equity risked per trade, risks 1% of the account equity per trade
-    max_open_trades: int = 1
-
-    def total_cost_bps(self) -> float:
-        """Round-trip cost (entry + exit)."""
-        return 2 * (self.fee_bps + self.slippage_bps)
+    # NOTE: trade-level parameters (costs, sizing, direction, leverage, risk
+    # overlays) intentionally do NOT live here — they describe *how you trade*
+    # any signal, not how signals are generated. They live on TradingConfig in
+    # engine/trade_configurator.py, are seeded onto PositionState by the runner,
+    # and applied at exit (cost) / entry (direction + daily-loss gates).
 
 
 # ── Signal / Trade models ──────────────────────────────────────────────────────
@@ -235,6 +227,16 @@ class Trade:
     peak_price: float = 0.0  # high-water mark (longs) / low-water (shorts)
     exit_reason: Optional[ExitReason] = None
 
+    # Initial stop price at entry, when the strategy exposes one (used by
+    # RISK-mode position sizing). None for trailing/flip-exit strategies.
+    stop_price: Optional[float] = None
+
+    # Equity layer (additive; filled by the backtester's post-run sizing pass —
+    # PositionState itself stays equity-agnostic). pnl_bps above is unaffected.
+    notional: float = 0.0       # position size in quote ccy at entry
+    pnl_currency: float = 0.0   # notional * pnl_bps / 10_000
+    equity_after: float = 0.0   # running account equity after this trade closed
+
     @property
     def is_closed(self) -> bool:
         return self.exit_ts is not None
@@ -248,7 +250,14 @@ class Trade:
 
 @dataclass
 class PositionState:
-    """Tracks the current open position, if any."""
+    """Tracks the current open position, if any.
+
+    Trade-level policy is *seeded by the runner* (backtester / live engine) from
+    a TradingConfig — PositionState never imports trade_configurator, it just
+    holds primitives. ``cost_bps`` is applied at exit; ``allow_long`` /
+    ``allow_short`` and ``max_daily_loss_bps`` gate entries. Defaults reproduce
+    the pre-trade-config behaviour (free, both directions, no daily cap).
+    """
 
     status: PositionStatus = PositionStatus.FLAT
     current_trade: Optional[Trade] = None
@@ -256,10 +265,51 @@ class PositionState:
     signals: list[Signal] = field(default_factory=list)
     _trade_counter: int = 0
 
+    # Runner-seeded trade-level policy (see TradingConfig).
+    cost_bps: float = 0.0
+    allow_long: bool = True
+    allow_short: bool = True
+    max_daily_loss_bps: Optional[float] = None
+
+    # Observability: entries a strategy attempted but trade-level policy blocked
+    # (direction gate or daily-loss halt). Surfaced by the runner so a gate that
+    # silently drops signals is visible rather than looking like "fewer trades".
+    suppressed_entries: int = 0
+
     # ── state transitions ──────────────────────────────────────────────────
 
-    def enter(self, direction: Direction, ts: datetime, price: float) -> Signal | None:
+    def _daily_loss_halted(self, ts: datetime) -> bool:
+        """True if the day's realized P&L has hit the configured loss cap, so no
+        new entries are allowed for the rest of that UTC day."""
+        if self.max_daily_loss_bps is None:
+            return False
+        day = ts.date()
+        realized = sum(
+            t.pnl_bps
+            for t in self.closed_trades
+            if t.exit_ts is not None and t.exit_ts.date() == day
+        )
+        return realized <= -self.max_daily_loss_bps
+
+    def enter(
+        self,
+        direction: Direction,
+        ts: datetime,
+        price: float,
+        stop_price: float | None = None,
+    ) -> Signal | None:
         if self.status != PositionStatus.FLAT:
+            return None  # already in a position — normal, not a policy suppression
+        # Direction gate (trade-level): reject a side the run isn't allowed to take.
+        if direction == Direction.LONG and not self.allow_long:
+            self.suppressed_entries += 1
+            return None
+        if direction == Direction.SHORT and not self.allow_short:
+            self.suppressed_entries += 1
+            return None
+        # Daily-loss overlay: block entries once today's realized loss cap is hit.
+        if self._daily_loss_halted(ts):
+            self.suppressed_entries += 1
             return None
         self._trade_counter += 1
         self.current_trade = Trade(
@@ -267,6 +317,7 @@ class PositionState:
             entry_ts=ts,
             entry_price=price,
             peak_price=price,
+            stop_price=stop_price,
         )
         self.status = PositionStatus.OPEN
         sig = Signal(
@@ -294,7 +345,6 @@ class PositionState:
         self,
         ts: datetime,
         price: float,
-        cost_bps: float = 0.0,
         reason: ExitReason = ExitReason.FORCE_CLOSE,
     ) -> Signal | None:
         if self.status != PositionStatus.OPEN or self.current_trade is None:
@@ -304,12 +354,12 @@ class PositionState:
         trade.exit_price = price
         trade.exit_reason = reason
 
-        # P&L in basis points
+        # P&L in basis points, net of the runner-seeded round-trip cost.
         if trade.direction == Direction.LONG:
             raw_bps = (price - trade.entry_price) / trade.entry_price * 10_000
         else:
             raw_bps = (trade.entry_price - price) / trade.entry_price * 10_000
-        trade.pnl_bps = raw_bps - cost_bps
+        trade.pnl_bps = raw_bps - self.cost_bps
 
         self.closed_trades.append(trade)
         self.status = PositionStatus.FLAT

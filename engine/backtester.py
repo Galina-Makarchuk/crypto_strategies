@@ -19,6 +19,7 @@ import pandas as pd
 
 from .models import ExitReason, PositionState, Trade
 from .strategies.base import BaseStrategy
+from .trade_configurator import SizingMode, TradingConfig, warn_if_inverse_gated
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +44,16 @@ class BacktestResult:
     profit_factor: float = 0.0
     max_drawdown_bps: float = 0.0
     sharpe_approx: float = 0.0
+    # Entries a strategy attempted but the direction/daily-loss gate blocked.
+    suppressed_entries: int = 0
+    # RISK-mode trades that fell back to fixed-fraction sizing (no entry stop).
+    risk_sizing_fallbacks: int = 0
+    # Equity layer (additive — driven by TradingConfig sizing). The bps
+    # metrics above are unaffected by it.
+    initial_equity: float = 0.0
+    final_equity: float = 0.0
+    total_return_pct: float = 0.0
+    max_drawdown_pct: float = 0.0
     trades: list[Trade] = field(default_factory=list)
 
     def summary(self) -> str:
@@ -52,6 +63,7 @@ class BacktestResult:
             f"  {self.symbol} | {self.interval} | {self.num_bars} bars",
             f"{'═' * 60}",
             f"  Total trades      : {self.total_trades}",
+            f"  Suppressed entries : {self.suppressed_entries}  (blocked by direction/daily-loss gate)",
             f"  Win / Loss / BE    : {self.winning_trades} / {self.losing_trades} / {self.break_even_trades}",
             f"  Win rate           : {self.win_rate:.1%}",
             f"  Total P&L (bps)    : {self.total_pnl_bps:+.1f}",
@@ -61,7 +73,17 @@ class BacktestResult:
             f"  Profit factor      : {self.profit_factor:.2f}",
             f"  Max drawdown (bps) : {self.max_drawdown_bps:.1f}",
             f"  Sharpe (approx)    : {self.sharpe_approx:.2f}",
+            f"  {'─' * 40}",
+            f"  Initial equity     : {self.initial_equity:,.2f}",
+            f"  Final equity       : {self.final_equity:,.2f}",
+            f"  Total return       : {self.total_return_pct:+.2f}%",
+            f"  Max drawdown       : {self.max_drawdown_pct:.2f}%",
         ]
+        if self.risk_sizing_fallbacks:
+            lines.append(
+                f"  Risk-sizing fallbacks: {self.risk_sizing_fallbacks}  "
+                "(no entry stop → fixed-fraction)"
+            )
         reasons = Counter(
             t.exit_reason.value for t in self.trades if t.exit_reason is not None
         )
@@ -77,26 +99,66 @@ class BacktestResult:
 class Backtester:
     """Bar-by-bar event-driven backtester."""
 
-    def __init__(self, strategy: BaseStrategy, symbol: str = "BTCUSDT"):
+    def __init__(
+        self,
+        strategy: BaseStrategy,
+        symbol: str = "BTCUSDT",
+        trading_config: TradingConfig | None = None,
+    ):
         self.strategy = strategy
         self.symbol = symbol
+        # Trade-level policy (costs, sizing, direction, risk overlays). Default
+        # reproduces prior behaviour: 12 bps round-trip cost, both directions.
+        self.trading_config = trading_config or TradingConfig()
+
+    def _new_state(self) -> PositionState:
+        """A PositionState seeded with the run's trade-level policy."""
+        tc = self.trading_config
+        return PositionState(
+            cost_bps=tc.total_cost_bps(),
+            allow_long=tc.allows_long(),
+            allow_short=tc.allows_short(),
+            max_daily_loss_bps=tc.max_daily_loss_bps,
+        )
 
     def run(self, df: pd.DataFrame, interval: str = "15") -> BacktestResult:
         logger.info("Running backtest: %s on %d bars …", self.strategy.name, len(df))
+        warn_if_inverse_gated(self.strategy.name, self.trading_config)
 
         # Strategies are contractually required to return a fresh DataFrame
         # from prepare() (see BaseStrategy.prepare); no defensive copy here.
         prepared = self.strategy.prepare(df)
-        state = PositionState()
+        state = self._new_state()
+        max_hold = self.trading_config.max_holding_bars
 
-        # Feed bars one at a time
+        # Feed bars one at a time. open_bar tracks the index where the current
+        # trade opened, so the max-holding overlay can force a time-stop.
+        open_bar: int | None = None
+        prev_counter = state._trade_counter
         for i in range(len(prepared)):
             self.strategy.on_bar(i, prepared, state)
 
+            if state.current_trade is not None:
+                if state._trade_counter != prev_counter:  # a new trade just opened
+                    open_bar = i
+                    prev_counter = state._trade_counter
+                if (
+                    max_hold is not None
+                    and open_bar is not None
+                    and (i - open_bar) >= max_hold
+                ):
+                    state.exit(
+                        prepared.index[i],
+                        float(prepared["close"].iloc[i]),
+                        ExitReason.TIME_STOP,
+                    )
+                    open_bar = None
+            else:
+                open_bar = None
+
         # Force-close any dangling position at last bar
         if state.current_trade is not None:
-            cost = self.strategy.config.total_cost_bps()
-            state.exit(prepared.index[-1], prepared["close"].iloc[-1], cost, ExitReason.FORCE_CLOSE)
+            state.exit(prepared.index[-1], prepared["close"].iloc[-1], ExitReason.FORCE_CLOSE)
             logger.info("Force-closed open position at end of data.")
 
         result = self._compute_stats(state, prepared, interval)
@@ -105,6 +167,20 @@ class Backtester:
             result.total_trades,
             result.total_pnl_bps,
         )
+        if result.suppressed_entries:
+            logger.info(
+                "%d entries suppressed by the direction/daily-loss gate "
+                "(direction=%s) — they are not in the trade count.",
+                result.suppressed_entries,
+                self.trading_config.direction.value,
+            )
+        if result.risk_sizing_fallbacks:
+            logger.info(
+                "%d of %d trades fell back to fixed-fraction sizing (no entry "
+                "stop available for RISK mode).",
+                result.risk_sizing_fallbacks,
+                result.total_trades,
+            )
         return result
 
     def _compute_stats(
@@ -118,6 +194,9 @@ class Backtester:
             num_bars=len(df),
             trades=trades,
             total_trades=len(trades),
+            suppressed_entries=state.suppressed_entries,
+            initial_equity=self.trading_config.initial_equity,
+            final_equity=self.trading_config.initial_equity,
         )
 
         if not trades:
@@ -165,4 +244,44 @@ class Backtester:
             elif mean < 0:
                 result.sharpe_approx = float("-inf")
 
+        self._apply_equity_layer(trades, result)
         return result
+
+    def _apply_equity_layer(
+        self, trades: list[Trade], result: BacktestResult
+    ) -> None:
+        """Walk closed trades in order, sizing each (fixed-fraction or risk-based)
+        and compounding equity. Fills each Trade's currency fields and the
+        result's equity metrics. Purely additive — pnl_bps is untouched."""
+        tc = self.trading_config
+        equity = tc.initial_equity
+        peak = equity
+        max_dd_pct = 0.0
+        fallbacks = 0
+        for t in trades:  # single-position ⇒ close order == entry order
+            t.notional, fell_back = self._notional_for(t, equity)
+            fallbacks += fell_back
+            t.pnl_currency = t.notional * (t.pnl_bps / 10_000.0)
+            equity += t.pnl_currency
+            t.equity_after = equity
+            peak = max(peak, equity)
+            if peak > 0:
+                max_dd_pct = max(max_dd_pct, (peak - equity) / peak * 100.0)
+
+        result.final_equity = equity
+        result.max_drawdown_pct = max_dd_pct
+        result.risk_sizing_fallbacks = fallbacks
+        if tc.initial_equity > 0:
+            result.total_return_pct = (equity / tc.initial_equity - 1.0) * 100.0
+
+    def _notional_for(self, trade: Trade, equity: float) -> tuple[float, bool]:
+        """Notional for one trade and whether it fell back to fixed-fraction.
+        RISK mode uses the trade's stop; if none is available it falls back to
+        fixed-fraction (fell_back=True). FIXED mode never falls back."""
+        tc = self.trading_config
+        if tc.sizing_mode == SizingMode.RISK:
+            risk_n = tc.risk_notional(equity, trade.entry_price, trade.stop_price)
+            if risk_n is not None:
+                return risk_n, False
+            return tc.notional(equity), True   # no usable stop → fixed-fraction
+        return tc.notional(equity), False

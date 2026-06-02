@@ -21,15 +21,24 @@ from typing import Optional
 import pandas as pd
 
 from .fetcher import BybitFetcher
-from .models import PositionState, StrategyConfig, validate_category, validate_interval
+from .models import ExitReason, PositionState, validate_category, validate_interval
 from .persistence import StateStore
 from .strategies.base import BaseStrategy
+from .trade_configurator import TradingConfig, warn_if_inverse_gated
 from .visualization import build_chart
 
 logger = logging.getLogger(__name__)
 
 _MAX_SIGNALS_KEPT = 500  # rolling window size
 _CIRCUIT_BREAKER_LIMIT = 10  # consecutive failures before stopping
+
+# Bar length in minutes, used to convert a max-holding-bars overlay into a time
+# delta in live mode (mirrors data_configurator._INTERVAL_MINUTES).
+_INTERVAL_MINUTES: dict[str, int] = {
+    "1": 1, "3": 3, "5": 5, "15": 15, "30": 30, "60": 60,
+    "120": 120, "240": 240, "360": 360, "720": 720,
+    "D": 1440, "W": 10080, "M": 43200,
+}
 
 
 class LiveEngine:
@@ -45,6 +54,7 @@ class LiveEngine:
         poll_seconds: int = 30,
         chart_path: str = "live_chart.html",
         db_path: str = "trading_state.db",
+        trading_config: TradingConfig | None = None,
     ):
         validate_interval(interval)
         validate_category(category)
@@ -55,12 +65,24 @@ class LiveEngine:
         self.num_candles = num_candles
         self.poll_seconds = poll_seconds
         self.chart_path = chart_path
+        self.trading_config = trading_config or TradingConfig()
 
         self._fetcher = BybitFetcher()
         self._store = StateStore(db_path)
         self._state: PositionState = self._store.load_state()
+        self._seed_state_policy(self._state)
         self._running = True
         self._consecutive_failures = 0
+
+    def _seed_state_policy(self, state: PositionState) -> None:
+        """Apply trade-level policy (cost, direction gate, daily-loss cap) onto a
+        loaded/fresh PositionState. The store persists only position data, not
+        config, so this re-seeds it from trading_config every run."""
+        tc = self.trading_config
+        state.cost_bps = tc.total_cost_bps()
+        state.allow_long = tc.allows_long()
+        state.allow_short = tc.allows_short()
+        state.max_daily_loss_bps = tc.max_daily_loss_bps
 
         # Register signal handlers for graceful shutdown
         signal.signal(signal.SIGINT, self._handle_shutdown)
@@ -80,6 +102,7 @@ class LiveEngine:
             self.strategy.name,
             self.poll_seconds,
         )
+        warn_if_inverse_gated(self.strategy.name, self.trading_config)
 
         while self._running:
             try:
@@ -126,6 +149,7 @@ class LiveEngine:
         # Record state before
         prev_trade_count = self._state._trade_counter
         prev_signals_count = len(self._state.signals)
+        prev_suppressed = self._state.suppressed_entries
 
         # Evaluate only the LAST bar (live mode)
         last_bar = len(prepared) - 1
@@ -135,6 +159,18 @@ class LiveEngine:
                 prepared["low"].iloc[last_bar],
             )
         self.strategy.on_bar(last_bar, prepared, self._state)
+
+        # max-holding overlay: if the strategy didn't exit, force a time-stop
+        # once the position has been held for the configured number of bars.
+        self._enforce_max_holding(prepared.index[last_bar], float(prepared["close"].iloc[last_bar]))
+
+        # Make a gated entry observable (otherwise a blocked signal looks like
+        # the strategy simply did nothing this bar).
+        if self._state.suppressed_entries != prev_suppressed:
+            logger.info(
+                "Entry suppressed by trade policy (direction=%s) — not opened.",
+                self.trading_config.direction.value,
+            )
 
         # Trim signals to bounded window
         if len(self._state.signals) > _MAX_SIGNALS_KEPT:
@@ -166,6 +202,21 @@ class LiveEngine:
             save_path=self.chart_path,
             auto_refresh=self.poll_seconds,
         )
+
+    def _enforce_max_holding(self, bar_ts, close: float) -> None:
+        """Force a time-stop when an open trade has been held for at least
+        max_holding_bars. Bars held are derived from the entry timestamp and the
+        bar interval (live evaluates only the latest bar, so there's no bar
+        counter to lean on)."""
+        max_hold = self.trading_config.max_holding_bars
+        trade = self._state.current_trade
+        if max_hold is None or trade is None or trade.entry_ts is None:
+            return
+        minutes = _INTERVAL_MINUTES[self.interval]
+        bars_held = (bar_ts - trade.entry_ts).total_seconds() / (minutes * 60)
+        if bars_held >= max_hold:
+            self._state.exit(bar_ts, close, ExitReason.TIME_STOP)
+            logger.info("Max-holding time-stop after ~%d bars.", int(bars_held))
 
     def _cleanup(self) -> None:
         logger.info("Cleaning up …")

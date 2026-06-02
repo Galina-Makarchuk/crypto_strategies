@@ -205,6 +205,8 @@ def save_result(
         "saved_at": datetime.now(timezone.utc).isoformat(),
         "metrics": {
             "total_trades": result.total_trades,
+            "suppressed_entries": result.suppressed_entries,
+            "risk_sizing_fallbacks": result.risk_sizing_fallbacks,
             "winning_trades": result.winning_trades,
             "losing_trades": result.losing_trades,
             "break_even_trades": result.break_even_trades,
@@ -216,6 +218,10 @@ def save_result(
             "profit_factor": _finite(result.profit_factor),
             "max_drawdown_bps": _finite(result.max_drawdown_bps),
             "sharpe_approx": _finite(result.sharpe_approx),
+            "initial_equity": _finite(result.initial_equity),
+            "final_equity": _finite(result.final_equity),
+            "total_return_pct": _finite(result.total_return_pct),
+            "max_drawdown_pct": _finite(result.max_drawdown_pct),
         },
         "trades": trades,
     }
@@ -238,6 +244,7 @@ def save_result(
 _TRADE_COLUMNS = [
     "trade_id", "direction", "entry_ts", "entry_price", "exit_ts", "exit_price",
     "pnl_bps", "peak_price", "exit_reason", "duration_seconds",
+    "stop_price", "notional", "pnl_currency", "equity_after",
 ]
 
 
@@ -260,6 +267,10 @@ def _trade_record(t) -> dict:
         "peak_price": t.peak_price,
         "exit_reason": t.exit_reason.value if t.exit_reason is not None else None,
         "duration_seconds": duration.total_seconds() if duration is not None else None,
+        "stop_price": t.stop_price,
+        "notional": t.notional,
+        "pnl_currency": t.pnl_currency,
+        "equity_after": t.equity_after,
     }
 
 
