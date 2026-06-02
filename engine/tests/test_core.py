@@ -145,12 +145,15 @@ class TestPositionState:
         state = PositionState()
         ts = datetime(2025, 1, 1, tzinfo=timezone.utc)
 
+        # Cost is now seeded on the state by the runner, not passed to exit().
+        state.cost_bps = 12.0
+
         sig = state.enter(Direction.LONG, ts, 100.0)
         assert sig is not None
         assert state.status == PositionStatus.OPEN
         assert state.current_trade is not None
 
-        sig2 = state.exit(ts, 105.0, cost_bps=12.0, reason=ExitReason.TAKE_PROFIT)
+        sig2 = state.exit(ts, 105.0, reason=ExitReason.TAKE_PROFIT)
         assert sig2 is not None
         assert state.status == PositionStatus.FLAT
         assert len(state.closed_trades) == 1
@@ -535,18 +538,24 @@ class TestBacktester:
         from engine.backtester import Backtester
         from engine.models import StrategyConfig
         from engine.strategies import EMACrossoverStrategy
+        from engine.trade_configurator import TradingConfig
 
-        config = StrategyConfig(fee_bps=10.0, slippage_bps=5.0)
-        strat = EMACrossoverStrategy(config)
+        # Costs now live on TradingConfig and are seeded onto the state by the
+        # backtester — strategies no longer carry them.
+        strat = EMACrossoverStrategy(StrategyConfig())
         df = _make_ohlcv(300, noise=2.0)
 
-        bt = Backtester(strat)
-        result = bt.run(df)
+        cheap = Backtester(strat, trading_config=TradingConfig(fee_bps=0.0, slippage_bps=0.0))
+        pricey = Backtester(strat, trading_config=TradingConfig(fee_bps=10.0, slippage_bps=5.0))
+        cheap_res = cheap.run(df)
+        pricey_res = pricey.run(df)
 
-        if result.total_trades > 0:
-            # Each trade's P&L should be reduced by round-trip costs (30 bps)
-            # We can't assert exact values but can verify trades exist
-            assert result.total_trades > 0
+        if cheap_res.total_trades > 0:
+            # Same signals, higher costs ⇒ each trade nets exactly the round-trip
+            # cost difference (2*(10+5) − 0 = 30 bps) less than the cheap run.
+            assert cheap_res.total_trades == pricey_res.total_trades
+            per_trade = (cheap_res.total_pnl_bps - pricey_res.total_pnl_bps) / cheap_res.total_trades
+            assert per_trade == pytest.approx(30.0)
 
     # ── _compute_stats edge cases ────────────────────────────────────────────
 
@@ -654,9 +663,9 @@ class TestBacktester:
 
 class TestConfig:
     def test_total_cost(self):
-        from engine.models import StrategyConfig
+        from engine.trade_configurator import TradingConfig
 
-        config = StrategyConfig(fee_bps=4.0, slippage_bps=2.0)
+        config = TradingConfig(fee_bps=4.0, slippage_bps=2.0)
         assert config.total_cost_bps() == 12.0  # 2 * (4 + 2)
 
     def test_interval_validation(self):
@@ -665,6 +674,319 @@ class TestConfig:
         assert validate_interval("15") == "15"
         with pytest.raises(ValueError):
             validate_interval("42")
+
+
+# ── Trade configurator tests ─────────────────────────────────────────────────
+
+
+class TestTradingConfig:
+    def test_costs_and_direction_gates(self):
+        from engine.trade_configurator import TradeDirection, TradingConfig
+
+        tc = TradingConfig(fee_bps=4.0, slippage_bps=2.0)
+        assert tc.total_cost_bps() == 12.0
+        assert tc.allows_long() and tc.allows_short()
+
+        long_only = TradingConfig(direction=TradeDirection.LONG)
+        assert long_only.allows_long() and not long_only.allows_short()
+
+    def test_notional_sizing(self):
+        from engine.trade_configurator import TradingConfig
+
+        # 50% of equity × 2× leverage = 1.0 × equity notional.
+        tc = TradingConfig(position_size_bps=5_000.0, leverage=2.0)
+        assert tc.notional(10_000.0) == pytest.approx(10_000.0)
+
+    def test_validation(self):
+        from engine.trade_configurator import TradingConfig
+
+        for bad in (
+            {"initial_equity": 0},
+            {"position_size_bps": 0},
+            {"leverage": 0},
+            {"fee_bps": -1},
+            {"max_daily_loss_bps": 0},
+            {"max_holding_bars": 0},
+        ):
+            with pytest.raises(ValueError):
+                TradingConfig(**bad)
+
+
+class TestDirectionGate:
+    def test_short_blocked_when_long_only(self):
+        from engine.models import Direction, PositionState
+
+        state = PositionState(allow_long=True, allow_short=False)
+        ts = datetime(2025, 1, 1, tzinfo=timezone.utc)
+        assert state.enter(Direction.SHORT, ts, 100.0) is None   # rejected
+        assert state.enter(Direction.LONG, ts, 100.0) is not None  # allowed
+
+
+class TestDailyLossHalt:
+    def test_halts_after_daily_cap_then_resets_next_day(self):
+        from engine.models import Direction, ExitReason, PositionState
+
+        ts = datetime(2025, 1, 1, tzinfo=timezone.utc)
+        state = PositionState(max_daily_loss_bps=100.0)
+        state.enter(Direction.LONG, ts, 100.0)
+        state.exit(ts, 98.0, ExitReason.STOP_LOSS)  # −200 bps realized
+        assert state.closed_trades[0].pnl_bps == pytest.approx(-200.0)
+        # Same-day re-entry blocked; next UTC day allowed.
+        assert state.enter(Direction.LONG, ts, 100.0) is None
+        next_day = datetime(2025, 1, 2, tzinfo=timezone.utc)
+        assert state.enter(Direction.LONG, next_day, 100.0) is not None
+
+
+class TestEquityLayer:
+    def test_equity_compounds_and_fills_trade_fields(self):
+        from engine.backtester import Backtester
+        from engine.models import StrategyConfig
+        from engine.strategies import SuperTrendStrategy
+        from engine.trade_configurator import TradingConfig
+
+        strat = SuperTrendStrategy(StrategyConfig())
+        df = _make_ohlcv(300, noise=3.0, seed=42)
+        tc = TradingConfig(initial_equity=10_000.0, position_size_bps=10_000.0)
+        result = Backtester(strat, trading_config=tc).run(df)
+
+        assert result.initial_equity == 10_000.0
+        if result.total_trades > 0:
+            # Last trade's running equity == reported final equity.
+            assert result.trades[-1].equity_after == pytest.approx(result.final_equity)
+            # final_equity is consistent with the reported total return.
+            assert result.final_equity == pytest.approx(
+                10_000.0 * (1 + result.total_return_pct / 100.0)
+            )
+            for t in result.trades:
+                assert t.notional > 0
+                assert t.pnl_currency == pytest.approx(t.notional * t.pnl_bps / 10_000.0)
+
+    def test_bps_metrics_unchanged_by_equity_layer(self):
+        """The equity layer is additive: bps P&L must not depend on sizing."""
+        from engine.backtester import Backtester
+        from engine.models import StrategyConfig
+        from engine.strategies import SuperTrendStrategy
+        from engine.trade_configurator import TradingConfig
+
+        df = _make_ohlcv(300, noise=3.0, seed=7)
+        a = Backtester(SuperTrendStrategy(StrategyConfig()),
+                       trading_config=TradingConfig(initial_equity=1_000.0)).run(df)
+        b = Backtester(SuperTrendStrategy(StrategyConfig()),
+                       trading_config=TradingConfig(initial_equity=500_000.0, leverage=3.0)).run(df)
+        assert a.total_pnl_bps == pytest.approx(b.total_pnl_bps)
+        assert a.total_trades == b.total_trades
+
+
+class TestMaxHolding:
+    def test_force_close_after_max_bars(self):
+        from engine.backtester import Backtester
+        from engine.models import Direction, ExitReason, StrategyConfig
+        from engine.strategies.base import BaseStrategy
+        from engine.trade_configurator import TradingConfig
+
+        class _EnterAndHold(BaseStrategy):
+            name = "enter_hold"
+            def prepare(self, df):
+                return df.copy()
+            def on_bar(self, i, df, state):
+                if i == 0 and state.current_trade is None:
+                    state.enter(Direction.LONG, df.index[i], float(df["close"].iloc[i]))
+
+        df = _make_ohlcv(30)
+        result = Backtester(
+            _EnterAndHold(StrategyConfig()), trading_config=TradingConfig(max_holding_bars=5)
+        ).run(df)
+        assert result.total_trades == 1
+        assert result.trades[0].exit_reason == ExitReason.TIME_STOP
+
+
+# ── Fix A: CLI seeds from ACTIVE_TRADE (single source of truth) ───────────────
+
+
+class TestCLITradeConfig:
+    def _ns(self, **over):
+        import argparse
+        from engine import cli
+        fields = [
+            "initial_equity", "position_size_bps", "leverage", "fee_bps",
+            "slippage_bps", "max_daily_loss_bps", "max_holding_bars", "direction",
+            "sizing_mode", "risk_per_trade_bps",
+        ]
+        ns = argparse.Namespace(**{f: cli._UNSET for f in fields})
+        for k, v in over.items():
+            setattr(ns, k, v)
+        return ns
+
+    def test_inherits_active_trade_when_no_flags(self, monkeypatch):
+        from engine import cli
+        from engine.trade_configurator import TradeDirection, TradingConfig
+
+        custom = TradingConfig(fee_bps=7.0, leverage=3.0, direction=TradeDirection.SHORT)
+        monkeypatch.setattr(cli, "ACTIVE_TRADE", custom)
+        assert cli._build_trading_config(self._ns()) == custom
+
+    def test_flag_overrides_only_that_field(self, monkeypatch):
+        from engine import cli
+        from engine.trade_configurator import TradeDirection, TradingConfig
+
+        custom = TradingConfig(fee_bps=7.0, slippage_bps=9.0, direction=TradeDirection.SHORT)
+        monkeypatch.setattr(cli, "ACTIVE_TRADE", custom)
+        built = cli._build_trading_config(self._ns(fee_bps=1.0, direction="both"))
+        assert built.fee_bps == 1.0                       # overridden
+        assert built.direction == TradeDirection.BOTH      # overridden
+        assert built.slippage_bps == custom.slippage_bps   # inherited, not reset to default
+
+    def test_sizing_flags_override(self, monkeypatch):
+        from engine import cli
+        from engine.trade_configurator import SizingMode, TradingConfig
+
+        monkeypatch.setattr(cli, "ACTIVE_TRADE", TradingConfig())
+        built = cli._build_trading_config(self._ns(sizing_mode="risk", risk_per_trade_bps=250.0))
+        assert built.sizing_mode == SizingMode.RISK
+        assert built.risk_per_trade_bps == 250.0
+        assert built.position_size_bps == TradingConfig().position_size_bps  # inherited
+
+
+# ── Fix B: gate suppression is observable ─────────────────────────────────────
+
+
+class TestSuppressionObservable:
+    def test_counter_increments_on_blocked_side(self):
+        from engine.models import Direction, PositionState
+
+        state = PositionState(allow_long=True, allow_short=False)
+        ts = datetime(2025, 1, 1, tzinfo=timezone.utc)
+        state.enter(Direction.SHORT, ts, 100.0)   # blocked → counted
+        state.enter(Direction.LONG, ts, 100.0)    # allowed → not counted
+        assert state.suppressed_entries == 1
+
+    def test_long_only_run_surfaces_suppressions(self):
+        from engine.backtester import Backtester
+        from engine.models import Direction, StrategyConfig
+        from engine.strategies import SuperTrendStrategy
+        from engine.trade_configurator import TradeDirection, TradingConfig
+
+        df = _make_ohlcv(400, noise=3.0, seed=11)
+        both = Backtester(SuperTrendStrategy(StrategyConfig()),
+                          trading_config=TradingConfig(direction=TradeDirection.BOTH)).run(df)
+        longonly = Backtester(SuperTrendStrategy(StrategyConfig()),
+                              trading_config=TradingConfig(direction=TradeDirection.LONG)).run(df)
+        assert both.suppressed_entries == 0
+        assert all(t.direction == Direction.LONG for t in longonly.trades)
+        if any(t.direction == Direction.SHORT for t in both.trades):
+            assert longonly.suppressed_entries > 0
+
+
+# ── Fix C: inverse-strategy × asymmetric-gate warning ─────────────────────────
+
+
+class TestInverseGateWarning:
+    def test_is_asymmetric(self):
+        from engine.trade_configurator import TradeDirection, TradingConfig
+
+        assert not TradingConfig(direction=TradeDirection.BOTH).is_asymmetric()
+        assert TradingConfig(direction=TradeDirection.LONG).is_asymmetric()
+        assert TradingConfig(direction=TradeDirection.SHORT).is_asymmetric()
+
+    def test_warns_on_inv_plus_asymmetric(self, caplog):
+        import logging
+        from engine.trade_configurator import (
+            TradeDirection, TradingConfig, warn_if_inverse_gated,
+        )
+        with caplog.at_level(logging.WARNING):
+            warn_if_inverse_gated("supertrend_inv", TradingConfig(direction=TradeDirection.SHORT))
+        assert any("inversion leg" in r.getMessage() for r in caplog.records)
+
+    def test_quiet_for_base_or_symmetric(self, caplog):
+        import logging
+        from engine.trade_configurator import (
+            TradeDirection, TradingConfig, warn_if_inverse_gated,
+        )
+        with caplog.at_level(logging.WARNING):
+            warn_if_inverse_gated("supertrend", TradingConfig(direction=TradeDirection.SHORT))    # base strategy
+            warn_if_inverse_gated("supertrend_inv", TradingConfig(direction=TradeDirection.BOTH))  # symmetric gate
+        assert not any("inversion leg" in r.getMessage() for r in caplog.records)
+
+
+# ── Risk-based position sizing (mode toggle, stop-where-available) ────────────
+
+
+class TestRiskSizing:
+    def test_risk_notional_math(self):
+        from engine.trade_configurator import SizingMode, TradingConfig
+
+        tc = TradingConfig(sizing_mode=SizingMode.RISK, risk_per_trade_bps=100.0)
+        # entry 100, stop 98 → stop_frac 0.02; risk$ = 10_000*0.01 = 100; notional = 100/0.02 = 5000
+        assert tc.risk_notional(10_000.0, 100.0, 98.0) == pytest.approx(5_000.0)
+        assert tc.risk_notional(10_000.0, 100.0, None) is None      # no stop
+        assert tc.risk_notional(10_000.0, 100.0, 100.0) is None     # zero-distance stop
+
+    def test_validation_rejects_nonpositive_risk(self):
+        from engine.trade_configurator import TradingConfig
+
+        with pytest.raises(ValueError):
+            TradingConfig(risk_per_trade_bps=0)
+
+    def test_stop_out_loses_the_risk_budget(self):
+        """A trade exiting at its stop should lose ≈ risk_per_trade_bps of equity."""
+        from engine.backtester import Backtester
+        from engine.models import Direction, StrategyConfig
+        from engine.strategies.base import BaseStrategy
+        from engine.trade_configurator import SizingMode, TradingConfig
+
+        class _StopOut(BaseStrategy):
+            name = "stopout"
+            def prepare(self, df):
+                return df.copy()
+            def on_bar(self, i, df, state):
+                if i == 0 and state.current_trade is None:
+                    px = float(df["close"].iloc[i])
+                    state.enter(Direction.LONG, df.index[i], px, stop_price=px * 0.98)
+
+        idx = pd.date_range("2025-01-01", periods=5, freq="15min", tz="UTC")
+        closes = [100.0, 100.0, 100.0, 100.0, 98.0]   # ends 2% below the entry
+        df = pd.DataFrame(
+            {"open": closes, "high": closes, "low": closes, "close": closes, "volume": 1.0},
+            index=idx,
+        )
+        tc = TradingConfig(initial_equity=10_000.0, sizing_mode=SizingMode.RISK,
+                           risk_per_trade_bps=100.0, fee_bps=0.0, slippage_bps=0.0)
+        res = Backtester(_StopOut(StrategyConfig()), trading_config=tc).run(df)
+        assert res.total_trades == 1
+        t = res.trades[0]
+        assert t.stop_price == pytest.approx(98.0)
+        assert t.notional == pytest.approx(5_000.0)        # risk-sized, not 100% of equity
+        assert t.pnl_currency == pytest.approx(-100.0)     # lost exactly 1% (100 bps) of equity
+        assert res.risk_sizing_fallbacks == 0
+
+    def test_stopless_strategy_falls_back_to_fixed(self):
+        from engine.backtester import Backtester
+        from engine.models import StrategyConfig
+        from engine.strategies import SuperTrendStrategy
+        from engine.trade_configurator import SizingMode, TradingConfig
+
+        df = _make_ohlcv(400, noise=3.0, seed=5)
+        tc = TradingConfig(initial_equity=10_000.0, sizing_mode=SizingMode.RISK)
+        res = Backtester(SuperTrendStrategy(StrategyConfig()), trading_config=tc).run(df)
+        if res.total_trades:
+            assert res.risk_sizing_fallbacks == res.total_trades   # every trade fell back
+            assert all(t.stop_price is None for t in res.trades)
+            assert res.trades[0].notional == pytest.approx(tc.notional(10_000.0))  # fixed-fraction
+
+    def test_bps_unchanged_fixed_vs_risk(self):
+        """Golden: sizing mode must not move the bps P&L."""
+        from engine.backtester import Backtester
+        from engine.models import StrategyConfig
+        from engine.strategies import SuperTrendStrategy
+        from engine.trade_configurator import SizingMode, TradingConfig
+
+        df = _make_ohlcv(300, noise=3.0, seed=9)
+        fixed = Backtester(SuperTrendStrategy(StrategyConfig()),
+                           trading_config=TradingConfig(sizing_mode=SizingMode.FIXED)).run(df)
+        risk = Backtester(SuperTrendStrategy(StrategyConfig()),
+                          trading_config=TradingConfig(sizing_mode=SizingMode.RISK)).run(df)
+        assert fixed.total_pnl_bps == pytest.approx(risk.total_pnl_bps)
+        assert fixed.total_trades == risk.total_trades
 
 
 if __name__ == "__main__":
