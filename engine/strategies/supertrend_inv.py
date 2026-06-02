@@ -40,7 +40,6 @@ class InverseSuperTrendStrategy(BaseStrategy):
         low_i = df["low"].iloc[i]
         ts = df.index[i]
         atr_val = df["atr"].iloc[i]
-        cost = self.config.total_cost_bps()
 
         trend_now = int(df["trend_dir"].iloc[i])
         trend_prev = int(df["trend_dir"].iloc[i - 1])
@@ -59,18 +58,18 @@ class InverseSuperTrendStrategy(BaseStrategy):
             if trade.direction == Direction.LONG:
                 trailing_stop = trade.peak_price - trail
                 if flip_up:
-                    state.exit(ts, close, cost, ExitReason.SIGNAL_FLIP)
+                    state.exit(ts, close, ExitReason.SIGNAL_FLIP)
                     return
                 if close < trailing_stop:
-                    state.exit(ts, close, cost, ExitReason.TRAILING_STOP)
+                    state.exit(ts, close, ExitReason.TRAILING_STOP)
                     return
             elif trade.direction == Direction.SHORT:
                 trailing_stop = trade.peak_price + trail
                 if flip_down:
-                    state.exit(ts, close, cost, ExitReason.SIGNAL_FLIP)
+                    state.exit(ts, close, ExitReason.SIGNAL_FLIP)
                     return
                 if close > trailing_stop:
-                    state.exit(ts, close, cost, ExitReason.TRAILING_STOP)
+                    state.exit(ts, close, ExitReason.TRAILING_STOP)
                     return
 
         # ── Entry logic (INVERTED) ─────────────────────────────────────────

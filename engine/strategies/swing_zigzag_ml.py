@@ -130,7 +130,6 @@ class MLSwingZigZagStrategy(BaseStrategy):
         low_i = df["low"].iloc[i]
         atr_val = df["ml_atr"].iloc[i]
         ts = df.index[i]
-        cost = self.config.total_cost_bps()
 
         if state.current_trade is not None:
             state.update_peak(high_i, low_i)
@@ -147,10 +146,10 @@ class MLSwingZigZagStrategy(BaseStrategy):
                 trail = atr_val * self.config.ml_stop_atr_mult
                 if trade.direction == Direction.LONG:
                     if close_i < trade.peak_price - trail:
-                        state.exit(ts, close_i, cost, ExitReason.TRAILING_STOP)
+                        state.exit(ts, close_i, ExitReason.TRAILING_STOP)
                 else:
                     if close_i > trade.peak_price + trail:
-                        state.exit(ts, close_i, cost, ExitReason.TRAILING_STOP)
+                        state.exit(ts, close_i, ExitReason.TRAILING_STOP)
 
             # Opposite-side signal above threshold → flip (exit, then re-enter).
             if state.current_trade is not None:
@@ -158,7 +157,7 @@ class MLSwingZigZagStrategy(BaseStrategy):
                 flip_long = trade.direction == Direction.LONG and p_short >= threshold
                 flip_short = trade.direction == Direction.SHORT and p_long >= threshold
                 if flip_long or flip_short:
-                    state.exit(ts, close_i, cost, ExitReason.SIGNAL_FLIP)
+                    state.exit(ts, close_i, ExitReason.SIGNAL_FLIP)
 
         # ── Entry logic ──────────────────────────────────────────────────────
         if state.current_trade is None:

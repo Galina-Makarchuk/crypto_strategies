@@ -54,7 +54,6 @@ class VWAPBandsStrategy(BaseStrategy):
         upper_prev = df[upper_col].iloc[i - 1]
         lower_prev = df[lower_col].iloc[i - 1]
         ts = df.index[i]
-        cost = self.config.total_cost_bps()
 
         if pd.isna(vwap_i) or pd.isna(upper_i) or pd.isna(lower_i):
             return
@@ -66,10 +65,10 @@ class VWAPBandsStrategy(BaseStrategy):
         if state.current_trade is not None:
             trade = state.current_trade
             if trade.direction == Direction.LONG and close_i >= vwap_i:
-                state.exit(ts, close_i, cost, ExitReason.TAKE_PROFIT)
+                state.exit(ts, close_i, ExitReason.TAKE_PROFIT)
                 return
             if trade.direction == Direction.SHORT and close_i <= vwap_i:
-                state.exit(ts, close_i, cost, ExitReason.TAKE_PROFIT)
+                state.exit(ts, close_i, ExitReason.TAKE_PROFIT)
                 return
 
         if state.current_trade is not None:

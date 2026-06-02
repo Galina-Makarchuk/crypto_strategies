@@ -323,7 +323,6 @@ class ImpulseFlagStrategy(BaseStrategy):
         high_i = float(df["high"].iloc[i])
         low_i = float(df["low"].iloc[i])
         ts = df.index[i]
-        cost = self.config.total_cost_bps()
 
         if state.current_trade is not None:
             state.update_peak(high_i, low_i)
@@ -343,7 +342,7 @@ class ImpulseFlagStrategy(BaseStrategy):
 
             # Pessimistic ordering: if stop touched, it wins the bar.
             if stop_hit:
-                state.exit(ts, self._active_stop, cost, ExitReason.STOP_LOSS)
+                state.exit(ts, self._active_stop, ExitReason.STOP_LOSS)
                 self._reset_trade_state()
                 return
 
@@ -353,7 +352,7 @@ class ImpulseFlagStrategy(BaseStrategy):
                     self._active_stop = trade.entry_price
 
             if t2_hit:
-                state.exit(ts, self._t2, cost, ExitReason.TAKE_PROFIT)
+                state.exit(ts, self._t2, ExitReason.TAKE_PROFIT)
                 self._reset_trade_state()
                 return
             return
@@ -373,12 +372,12 @@ class ImpulseFlagStrategy(BaseStrategy):
         setup = self._pending
         if setup.side == 1 and high_i >= setup.trigger:
             fill = max(open_i, setup.trigger)
-            if state.enter(Direction.LONG, ts, fill) is not None:
+            if state.enter(Direction.LONG, ts, fill, stop_price=setup.stop) is not None:
                 self._arm_exits(setup)
             self._pending = None
         elif setup.side == -1 and low_i <= setup.trigger:
             fill = min(open_i, setup.trigger)
-            if state.enter(Direction.SHORT, ts, fill) is not None:
+            if state.enter(Direction.SHORT, ts, fill, stop_price=setup.stop) is not None:
                 self._arm_exits(setup)
             self._pending = None
 

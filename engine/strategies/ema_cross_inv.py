@@ -37,7 +37,6 @@ class InverseEMACrossoverStrategy(BaseStrategy):
         low_i = df["low"].iloc[i]
         ts = df.index[i]
         atr_val = df["atr"].iloc[i]
-        cost = self.config.total_cost_bps()
 
         ema_f = df["ema_fast"].iloc[i]
         ema_s = df["ema_slow"].iloc[i]
@@ -63,20 +62,20 @@ class InverseEMACrossoverStrategy(BaseStrategy):
                 # LONG was entered on bearish_cross; a bullish_cross would
                 # trigger a new SHORT in this strategy → signal flip.
                 if bullish_cross:
-                    state.exit(ts, close, cost, ExitReason.SIGNAL_FLIP)
+                    state.exit(ts, close, ExitReason.SIGNAL_FLIP)
                     return
                 if close < trailing_stop:
-                    state.exit(ts, close, cost, ExitReason.TRAILING_STOP)
+                    state.exit(ts, close, ExitReason.TRAILING_STOP)
                     return
             elif trade.direction == Direction.SHORT:
                 trailing_stop = trade.peak_price + trail
                 # SHORT was entered on bullish_cross; a bearish_cross would
                 # trigger a new LONG in this strategy → signal flip.
                 if bearish_cross:
-                    state.exit(ts, close, cost, ExitReason.SIGNAL_FLIP)
+                    state.exit(ts, close, ExitReason.SIGNAL_FLIP)
                     return
                 if close > trailing_stop:
-                    state.exit(ts, close, cost, ExitReason.TRAILING_STOP)
+                    state.exit(ts, close, ExitReason.TRAILING_STOP)
                     return
 
         # ── Entry logic (INVERTED) ─────────────────────────────────────────

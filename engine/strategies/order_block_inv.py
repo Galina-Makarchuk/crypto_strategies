@@ -201,7 +201,6 @@ class InverseOrderBlockStrategy(BaseStrategy):
         high_i = float(df["high"].iloc[i])
         low_i = float(df["low"].iloc[i])
         close_i = float(df["close"].iloc[i])
-        cost = cfg.total_cost_bps()
 
         if state.current_trade is not None:
             state.update_peak(high_i, low_i)
@@ -211,20 +210,20 @@ class InverseOrderBlockStrategy(BaseStrategy):
             trade = state.current_trade
             if trade.direction == Direction.LONG:
                 if low_i <= self._active_stop:
-                    state.exit(ts, self._active_stop, cost, ExitReason.STOP_LOSS)
+                    state.exit(ts, self._active_stop, ExitReason.STOP_LOSS)
                     self._reset_trade_state()
                     return
                 if high_i >= self._active_target:
-                    state.exit(ts, self._active_target, cost, ExitReason.TAKE_PROFIT)
+                    state.exit(ts, self._active_target, ExitReason.TAKE_PROFIT)
                     self._reset_trade_state()
                     return
             else:
                 if high_i >= self._active_stop:
-                    state.exit(ts, self._active_stop, cost, ExitReason.STOP_LOSS)
+                    state.exit(ts, self._active_stop, ExitReason.STOP_LOSS)
                     self._reset_trade_state()
                     return
                 if low_i <= self._active_target:
-                    state.exit(ts, self._active_target, cost, ExitReason.TAKE_PROFIT)
+                    state.exit(ts, self._active_target, ExitReason.TAKE_PROFIT)
                     self._reset_trade_state()
                     return
             return
@@ -272,7 +271,7 @@ class InverseOrderBlockStrategy(BaseStrategy):
                 target = close_i + cfg.ob_rr * risk
                 direction = Direction.LONG
 
-            if state.enter(direction, ts, close_i) is not None:
+            if state.enter(direction, ts, close_i, stop_price=stop) is not None:
                 self._active_stop = float(stop)
                 self._active_target = float(target)
                 self._obs.remove(ob)

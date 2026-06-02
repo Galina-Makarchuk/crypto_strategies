@@ -55,7 +55,6 @@ class InverseSwingBreakoutStrategy(BaseStrategy):
         low_i = df["low"].iloc[i]
         ts = df.index[i]
         atr_val = df["atr"].iloc[i]
-        cost = self.config.total_cost_bps()
 
         res_levels, sup_levels = self._active_levels(i)
 
@@ -72,20 +71,20 @@ class InverseSwingBreakoutStrategy(BaseStrategy):
                 trailing_stop = trade.peak_price - trail
                 crossed_above_res = any(close > lvl >= prev_close for lvl in res_levels)
                 if close < trailing_stop:
-                    state.exit(ts, close, cost, ExitReason.TRAILING_STOP)
+                    state.exit(ts, close, ExitReason.TRAILING_STOP)
                     return
                 if crossed_above_res:
-                    state.exit(ts, close, cost, ExitReason.SIGNAL_FLIP)
+                    state.exit(ts, close, ExitReason.SIGNAL_FLIP)
                     return
 
             elif trade.direction == Direction.SHORT:
                 trailing_stop = trade.peak_price + trail
                 crossed_below_sup = any(close < lvl <= prev_close for lvl in sup_levels)
                 if close > trailing_stop:
-                    state.exit(ts, close, cost, ExitReason.TRAILING_STOP)
+                    state.exit(ts, close, ExitReason.TRAILING_STOP)
                     return
                 if crossed_below_sup:
-                    state.exit(ts, close, cost, ExitReason.SIGNAL_FLIP)
+                    state.exit(ts, close, ExitReason.SIGNAL_FLIP)
                     return
 
         # ── Entry logic (INVERTED) ─────────────────────────────────────────

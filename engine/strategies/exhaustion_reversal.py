@@ -213,7 +213,6 @@ class ExhaustionReversalStrategy(BaseStrategy):
         volume_i = df["volume"].iloc[i]
         ts = df.index[i]
         atr_val = df["atr"].iloc[i]
-        cost = self.config.total_cost_bps()
 
         if close_i > open_i:
             dir_i = 1
@@ -235,17 +234,17 @@ class ExhaustionReversalStrategy(BaseStrategy):
             trade = state.current_trade
 
             if trade.direction == Direction.SHORT and high_i >= self._stop_price:
-                state.exit(ts, self._stop_price, cost, ExitReason.STOP_LOSS)
+                state.exit(ts, self._stop_price, ExitReason.STOP_LOSS)
                 return
             if trade.direction == Direction.LONG and low_i <= self._stop_price:
-                state.exit(ts, self._stop_price, cost, ExitReason.STOP_LOSS)
+                state.exit(ts, self._stop_price, ExitReason.STOP_LOSS)
                 return
 
             if trade.direction == Direction.SHORT and low_i <= self._target_price:
-                state.exit(ts, self._target_price, cost, ExitReason.TAKE_PROFIT)
+                state.exit(ts, self._target_price, ExitReason.TAKE_PROFIT)
                 return
             if trade.direction == Direction.LONG and high_i >= self._target_price:
-                state.exit(ts, self._target_price, cost, ExitReason.TAKE_PROFIT)
+                state.exit(ts, self._target_price, ExitReason.TAKE_PROFIT)
                 return
 
             inv_len = self.config.exhaustion_invalidation_len
@@ -253,11 +252,11 @@ class ExhaustionReversalStrategy(BaseStrategy):
                 if (trade.direction == Direction.SHORT and completed_streak.direction == 1) or (
                     trade.direction == Direction.LONG and completed_streak.direction == -1
                 ):
-                    state.exit(ts, close_i, cost, ExitReason.INVALIDATION)
+                    state.exit(ts, close_i, ExitReason.INVALIDATION)
                     return
 
             if i - self._entry_bar_idx >= self.config.exhaustion_time_stop_bars:
-                state.exit(ts, close_i, cost, ExitReason.TIME_STOP)
+                state.exit(ts, close_i, ExitReason.TIME_STOP)
                 return
 
         if state.current_trade is not None:
@@ -296,7 +295,7 @@ class ExhaustionReversalStrategy(BaseStrategy):
             target = close_i + self.config.exhaustion_target_rr * risk
             direction = Direction.LONG
 
-        sig = state.enter(direction, ts, close_i)
+        sig = state.enter(direction, ts, close_i, stop_price=stop)
         if sig is not None:
             self._entry_bar_idx = i
             self._stop_price = stop
