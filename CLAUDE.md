@@ -18,6 +18,11 @@ python -m engine --strategy supertrend --interval 15 --candles 800
 # Explicit date range, on the inverse market
 python -m engine --strategy supertrend --interval 15 --start 2026-01-01 --end 2026-04-01 --category inverse
 
+# Trade-level params (costs / sizing / direction / overlays) — see trade_configurator.py
+python -m engine --strategy supertrend --interval 15 \
+  --fee-bps 5.5 --slippage-bps 1.5 --leverage 2 --direction long \
+  --initial-equity 25000 --position-size-bps 5000 --max-holding-bars 48 --max-daily-loss-bps 300
+
 # Live mode (SQLite state persistence, poll loop)
 python -m engine --strategy supertrend --mode live --interval 5 --poll 30
 
@@ -47,15 +52,22 @@ The system is organized around one invariant: **look-ahead bias is structurally 
 
 `on_bar` never returns a signal — it calls `state.enter()` / `state.exit()` on a [PositionState](engine/models.py#L149). The state machine rejects invalid transitions (double-entry, exit-while-flat), which means strategy code does not need to track position status itself.
 
-`state.exit(ts, price, cost_bps)` is where P&L is computed, including round-trip fees + slippage from [StrategyConfig.total_cost_bps()](engine/models.py#L112). Strategies must pass `self.config.total_cost_bps()` when calling `exit` — skipping it silently produces gross (pre-cost) P&L.
+`state.exit(ts, price, reason)` is where P&L is computed. Round-trip fees + slippage come from `cost_bps`, which the **runner seeds onto `PositionState`** from [TradingConfig.total_cost_bps()](engine/trade_configurator.py) (see "Two configs" below) — strategies no longer pass cost themselves. The direction gate and daily-loss overlay are likewise enforced in `PositionState.enter()` from runner-seeded fields, so `on_bar` stays free of trade-level policy.
 
 ### Trailing stop = peak-tracked, not bar-tracked
 
 Every `on_bar` implementation must call `state.update_peak(high, low)` before checking exits when a position is open. The trailing stop compares against [Trade.peak_price](engine/models.py#L142) (high-water for longs, low-water for shorts) — **not** the previous bar's close. This was bug #4 in the v1 rewrite; the pattern is load-bearing.
 
-### Config is frozen and central
+### Two configs: strategy params vs trade params
 
-All tunable numbers (periods, multipliers, fees, risk %, strategy-specific knobs like the exhaustion-reversal streak thresholds) live on [StrategyConfig](engine/models.py#L67), a frozen dataclass. Add new parameters there rather than hard-coding in strategy files.
+Tunable numbers split across two frozen dataclasses by **who they belong to**:
+
+- **[StrategyConfig](engine/models.py#L97)** (in [models.py](engine/models.py)) — *how signals are generated*: indicator periods, multipliers, and per-strategy stop/target knobs (ATR mults, RR targets, streak thresholds). Add new signal-logic knobs here. Consumed by strategies via `self.config`.
+- **[TradingConfig](engine/trade_configurator.py)** (in [trade_configurator.py](engine/trade_configurator.py)) — *how you trade any signal*, independent of strategy: `initial_equity`, `position_size_bps`, `leverage`, `sizing_mode`, `risk_per_trade_bps`, `fee_bps`, `slippage_bps`, `max_daily_loss_bps`, `max_holding_bars`, and the `direction` gate (long/short/both). Edit the `ACTIVE_TRADE` block once and it's the **project-wide default**: notebooks pass it directly, and CLI runs *seed from it* — each `--flag` overrides only that one field (so the CLI and notebooks can't silently diverge). Mirrors `data_configurator`'s `ACTIVE`. `total_cost_bps()` is **derived** (`2*(fee+slippage)`), never stored.
+
+  **Sizing modes** (`sizing_mode`): `FIXED` deploys `position_size_bps × leverage` of equity per trade; `RISK` sizes each trade so a stop-out loses `risk_per_trade_bps` of equity (`risk$ ÷ stop-distance`, leverage not applied). RISK is **stop-where-available**: only the strategies that expose an entry stop (`exhaustion_reversal`, `impulse_flag`, `order_block`(+`_inv`)) get risk-sized — the trailing/flip-exit strategies have no entry stop and **fall back to fixed-fraction**, counted in `risk_sizing_fallbacks` and logged so it's never silent. The strategy passes its stop via `state.enter(..., stop_price=...)`, recorded on `Trade.stop_price`.
+
+The runner ([Backtester](engine/backtester.py) / [LiveEngine](engine/live.py)) seeds the relevant `TradingConfig` values onto `PositionState` (cost at exit; direction + daily-loss gates at entry; `max_holding_bars` enforced in the run loop). On top of bps P&L, the backtester runs an **additive equity layer**: it sizes each trade per `sizing_mode` (fixed-fraction or risk-based, see above) and compounds `initial_equity` into per-trade `notional` / `pnl_currency` / `equity_after` and result-level `final_equity` / `total_return_pct` / `max_drawdown_pct`. This is purely additive — `pnl_bps` and all bps metrics are unchanged by sizing (a golden test pins `FIXED` vs `RISK` to identical bps).
 
 ### Live mode adds resilience, not new semantics
 
@@ -78,8 +90,8 @@ All tunable numbers (periods, multipliers, fees, risk %, strategy-specific knobs
 
 ## Notebooks
 
-[strategy_notebooks/](strategy_notebooks/) is where new strategy ideas are prototyped before being ported into [strategies/](engine/strategies/). [analysis.ipynb](analysis.ipynb) at the repo root is for ad-hoc result analysis. Notebooks are not part of the test surface. They load candles via `load_data()` and persist results via `save_result(result, ACTIVE)` (both from [data_configurator.py](engine/data_configurator.py)) rather than hardcoding symbol/interval or instantiating `BybitFetcher`. The two ML notebooks (`swing_zigzag_ml*`) intentionally keep their own pickle cache for their fixed multi-year training window.
+[strategy_notebooks/](strategy_notebooks/) is where new strategy ideas are prototyped before being ported into [strategies/](engine/strategies/). [analysis.ipynb](analysis.ipynb) at the repo root is for ad-hoc result analysis. Notebooks are not part of the test surface. They load candles via `load_data()` and persist results via `save_result(result, ACTIVE)` (both from [data_configurator.py](engine/data_configurator.py)), and pass `trading_config=ACTIVE_TRADE` (from [trade_configurator.py](engine/trade_configurator.py)) to `Backtester` so trade params flow from the one editable block — rather than hardcoding symbol/interval, costs, or instantiating `BybitFetcher`. The two ML notebooks (`swing_zigzag_ml*`) intentionally keep their own pickle cache for their fixed multi-year training window.
 
 ## Plans
 
-- [docs/config-split-plan.md](docs/config-split-plan.md) — proposed (not yet implemented) split of the config surface into `strategy_configurator.py` (per-strategy params + sweeps) and `trade_configurator.py` (direction / risk / costs / stops).
+- [docs/config-split-plan.md](docs/config-split-plan.md) — the original config-split design. The **trade side is now implemented** as [trade_configurator.py](engine/trade_configurator.py) (costs, sizing/equity, direction gate, leverage, daily-loss, max-holding) with the equity layer wired through the backtester. The **strategy side** (`strategy_configurator.py` — moving `StrategyConfig` out of `models.py` into a per-strategy `PARAMS` registry + `sweep()`) is still pending; `StrategyConfig` continues to live in `models.py` for now.
