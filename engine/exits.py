@@ -186,6 +186,15 @@ class FixedPctTarget(_Target):
         return ctx.entry_price * (1.0 - self.frac)
 
 
+class StructuralTarget(_Target):
+    """Take-profit at a strategy-supplied level (``ctx.ref_target``) — e.g. an
+    order-block's R:R target or a measured move. The strategy computes the level
+    and passes it each bar; this policy provides the fill mechanism."""
+
+    def target(self, ctx: ExitContext) -> Optional[float]:
+        return ctx.ref_target
+
+
 class RrTarget(_Target):
     """Reward:risk take-profit at entry ± rr·risk, where risk = |entry − stop|.
     Needs a stop to define risk; returns no target when ``stop_price`` is unset."""

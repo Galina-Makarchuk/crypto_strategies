@@ -225,27 +225,17 @@ class OrderBlockStrategy(BaseStrategy):
         if state.current_trade is not None:
             state.update_peak(high_i, low_i)
 
-        # ── Manage open position: fixed SL / TP ──────────────────────────
+        # ── Manage open position: fixed SL / TP (delegated to exit policy) ──
+        # Stop sits on the trade's stop_price (set at entry); the R:R target is
+        # supplied as ref_target. CompositeExit is stop-first, intrabar fills.
         if state.current_trade is not None:
             trade = state.current_trade
-            if trade.direction == Direction.LONG:
-                if low_i <= self._active_stop:
-                    state.exit(ts, self._active_stop, ExitReason.STOP_LOSS)
-                    self._reset_trade_state()
-                    return
-                if high_i >= self._active_target:
-                    state.exit(ts, self._active_target, ExitReason.TAKE_PROFIT)
-                    self._reset_trade_state()
-                    return
-            else:
-                if high_i >= self._active_stop:
-                    state.exit(ts, self._active_stop, ExitReason.STOP_LOSS)
-                    self._reset_trade_state()
-                    return
-                if low_i <= self._active_target:
-                    state.exit(ts, self._active_target, ExitReason.TAKE_PROFIT)
-                    self._reset_trade_state()
-                    return
+            decision = self.exit_policy.evaluate(
+                self._exit_ctx(i, df, trade, 0.0, ref_target=self._active_target)
+            )
+            if decision is not None:
+                state.exit(ts, decision.price, decision.reason)
+                self._reset_trade_state()
             return
 
         # ── Register new OB when an impulse completes on this bar ────────

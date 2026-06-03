@@ -29,6 +29,7 @@ from .exits import (
     FixedPctStop,
     RrTarget,
     StructuralStop,
+    StructuralTarget,
 )
 
 
@@ -154,13 +155,18 @@ EXIT_PRESETS: dict[str, "callable[[], ExitPolicy]"] = {
     "atr_stop_rr2":    lambda: CompositeExit(AtrStop(1.5), RrTarget(2.0)),
     "structural_rr2":  lambda: CompositeExit(StructuralStop(), RrTarget(2.0)),
     "fixed_2pct_rr3":  lambda: CompositeExit(FixedPctStop(2.0), RrTarget(3.0)),
+    # Fixed stop + fixed target, both at strategy-supplied levels (ref_stop via
+    # the entry stop_price, ref_target passed per bar). Stop-first.
+    "structural":      lambda: CompositeExit(StructuralStop(), StructuralTarget()),
 }
 
-# Global default exit, with optional per-strategy overrides (string-keyed by the
-# strategy's `name`, never by importing the class — keeps the import graph acyclic).
+# Global default exit (covers the trend/EMA/swing group), with per-strategy
+# overrides (string-keyed by the strategy's `name`, never by importing the class
+# — keeps the import graph acyclic).
 DEFAULT_EXIT = "chandelier_2atr"
 PER_STRATEGY_EXIT: dict[str, str] = {
-    # e.g. "order_block": "structural_rr2", "impulse_flag": "structural_rr2",
+    "order_block": "structural",
+    "order_block_inv": "structural",
 }
 
 
