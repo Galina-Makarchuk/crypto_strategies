@@ -62,12 +62,18 @@ Every `on_bar` implementation must call `state.update_peak(high, low)` before ch
 
 Tunable numbers split across two frozen dataclasses by **who they belong to**:
 
-- **[StrategyConfig](engine/models.py#L97)** (in [models.py](engine/models.py)) — *how signals are generated*: indicator periods, multipliers, and per-strategy stop/target knobs (ATR mults, RR targets, streak thresholds). Add new signal-logic knobs here. Consumed by strategies via `self.config`.
+- **[StrategyConfig](engine/strategy_configurator.py)** (in [strategy_configurator.py](engine/strategy_configurator.py)) — *how signals are generated*: indicator periods, multipliers, and the per-strategy structural levels the strategy still computes. Add new signal-logic knobs here. Consumed by strategies via `self.config`. (Moved out of `models.py`, which now holds only domain types + the `PositionState` state machine.) This file **also** holds the exit-policy catalog — see "Exit policies" below.
 - **[TradingConfig](engine/trade_configurator.py)** (in [trade_configurator.py](engine/trade_configurator.py)) — *how you trade any signal*, independent of strategy: `initial_equity`, `position_size_bps`, `leverage`, `sizing_mode`, `risk_per_trade_bps`, `fee_bps`, `slippage_bps`, `max_daily_loss_bps`, `max_holding_bars`, and the `direction` gate (long/short/both). Edit the `ACTIVE_TRADE` block once and it's the **project-wide default**: notebooks pass it directly, and CLI runs *seed from it* — each `--flag` overrides only that one field (so the CLI and notebooks can't silently diverge). Mirrors `data_configurator`'s `ACTIVE`. `total_cost_bps()` is **derived** (`2*(fee+slippage)`), never stored.
 
-  **Sizing modes** (`sizing_mode`): `FIXED` deploys `position_size_bps × leverage` of equity per trade; `RISK` sizes each trade so a stop-out loses `risk_per_trade_bps` of equity (`risk$ ÷ stop-distance`, leverage not applied). RISK is **stop-where-available**: only the strategies that expose an entry stop (`exhaustion_reversal`, `impulse_flag`, `order_block`(+`_inv`)) get risk-sized — the trailing/flip-exit strategies have no entry stop and **fall back to fixed-fraction**, counted in `risk_sizing_fallbacks` and logged so it's never silent. The strategy passes its stop via `state.enter(..., stop_price=...)`, recorded on `Trade.stop_price`.
+  **Sizing modes** (`sizing_mode`): `FIXED` deploys `position_size_bps × leverage` of equity per trade; `RISK` sizes each trade so a stop-out loses `risk_per_trade_bps` of equity (`risk$ ÷ stop-distance`, leverage not applied). RISK is **stop-where-available**: a trade is risk-sized when its exit policy supplies an entry stop (`ExitPolicy.initial_stop`, recorded on `Trade.stop_price` via `state.enter(..., stop_price=...)`) — which now covers every strategy except the genuinely stopless ones (`vwap_bands`, `swing_zigzag`/`_ml`), which **fall back to fixed-fraction**, counted in `risk_sizing_fallbacks` and logged so it's never silent.
 
 The runner ([Backtester](engine/backtester.py) / [LiveEngine](engine/live.py)) seeds the relevant `TradingConfig` values onto `PositionState` (cost at exit; direction + daily-loss gates at entry; `max_holding_bars` enforced in the run loop). On top of bps P&L, the backtester runs an **additive equity layer**: it sizes each trade per `sizing_mode` (fixed-fraction or risk-based, see above) and compounds `initial_equity` into per-trade `notional` / `pnl_currency` / `equity_after` and result-level `final_equity` / `total_return_pct` / `max_drawdown_pct`. This is purely additive — `pnl_bps` and all bps metrics are unchanged by sizing (a golden test pins `FIXED` vs `RISK` to identical bps).
+
+### Exit policies (selectable stop-loss / take-profit)
+
+Stops and take-profits are **pluggable mechanisms** in [exits.py](engine/exits.py), behind one `ExitPolicy` interface (an SL and a TP both just decide "close at price X for reason Y"): `ChandelierStop` (ATR trail from peak, close-triggered), `AtrStop`/`FixedPctStop`/`StructuralStop` (fixed, intrabar fill), `FixedPctTarget`/`RrTarget`/`StructuralTarget`/`CloseCrossTarget`, and `CompositeExit` (runs them **stop-first** so an ambiguous bar resolves to the stop). `ExitPolicy.initial_stop` feeds risk-based sizing.
+
+Each strategy is **assigned** a policy in [strategy_configurator.py](engine/strategy_configurator.py): `EXIT_PRESETS` (named factories) + `DEFAULT_EXIT` (the trend/EMA/swing group) + string-keyed `PER_STRATEGY_EXIT` overrides + `exit_policy_for(name)`. `BaseStrategy` injects it (`self.exit_policy`, default `exit_policy_for(self.name)`); a caller may inject a different one (the CLI exposes `--exit-preset`). In `on_bar`, a strategy delegates its price stop/target to `self.exit_policy.evaluate(self._exit_ctx(...))` and keeps **signal-based exits native** (trend/cross flips, exhaustion's invalidation + time-stop, impulse_flag's T1 breakeven-shift + order expiry). Strategy-specific *levels* (order-block extreme, flag stop, R:R target, VWAP mid) are passed to the policy as `ref_stop` / `ref_target`. Every conversion is pinned byte-for-byte by [test_golden.py](engine/tests/test_golden.py).
 
 ### Live mode adds resilience, not new semantics
 
@@ -84,9 +90,10 @@ The runner ([Backtester](engine/backtester.py) / [LiveEngine](engine/live.py)) s
 ## Adding a new strategy
 
 1. Create `engine/strategies/<name>.py` subclassing `BaseStrategy`, set `name = "<name>"`.
-2. Implement `prepare` (copy df, add indicator columns) and `on_bar` (update peak → check exit → check entry, in that order).
-3. Register the class in [strategies/__init__.py](engine/strategies/__init__.py) and add an enum member to [StrategyName](engine/models.py#L34) plus a dispatch entry in [cli._build_strategy()](engine/cli.py#L24).
-4. Add any new config knobs to [StrategyConfig](engine/models.py#L67).
+2. Implement `prepare` (copy df, add indicator columns) and `on_bar` (update peak → check exit → check entry, in that order). For price stops/targets, delegate to `self.exit_policy.evaluate(self._exit_ctx(...))` and keep signal-based exits native; for sizing, seed `state.enter(..., stop_price=self._entry_stop(...))`.
+3. Register the class in [strategies/__init__.py](engine/strategies/__init__.py) and add an enum member to [StrategyName](engine/models.py#L34) plus a dispatch entry in [cli._build_strategy()](engine/cli.py).
+4. Add any new signal knobs to [StrategyConfig](engine/strategy_configurator.py); assign/define its exit policy in the same file (`EXIT_PRESETS` + `PER_STRATEGY_EXIT`, else it inherits `DEFAULT_EXIT`). Trade-level knobs go on [TradingConfig](engine/trade_configurator.py) instead.
+5. Add a golden snapshot in [test_golden.py](engine/tests/test_golden.py) so its trades are pinned.
 
 ## Notebooks
 

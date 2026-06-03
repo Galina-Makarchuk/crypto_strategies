@@ -16,7 +16,7 @@ from .backtester import Backtester
 from .data_configurator import DataSpec, load_data, save_result
 from .live import LiveEngine
 from .models import VALID_CATEGORIES, VALID_INTERVALS, StrategyName
-from .strategy_configurator import StrategyConfig
+from .strategy_configurator import EXIT_PRESETS, StrategyConfig
 from .trade_configurator import ACTIVE_TRADE, SizingMode, TradeDirection, TradingConfig
 from .strategies import AdaptiveSuperTrendStrategy, EMACrossoverStrategy, InverseEMACrossoverStrategy, ExhaustionReversalStrategy, ImpulseFlagStrategy, InverseOrderBlockStrategy, InverseSuperTrendStrategy, MLSwingZigZagStrategy, OrderBlockStrategy, SuperTrendStrategy, SwingBreakoutStrategy, InverseSwingBreakoutStrategy, SwingZigZagStrategy, VWAPBandsStrategy
 from .visualization import build_chart
@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 _UNSET = object()
 
 
-def _build_strategy(name: str, config: StrategyConfig):
+def _build_strategy(name: str, config: StrategyConfig, exit_policy=None):
     strategies = {
         StrategyName.SWING.value: SwingBreakoutStrategy,
         StrategyName.SWING_INV.value: InverseSwingBreakoutStrategy,
@@ -49,7 +49,7 @@ def _build_strategy(name: str, config: StrategyConfig):
     cls = strategies.get(name)
     if cls is None:
         raise ValueError(f"Unknown strategy '{name}'. Available: {list(strategies.keys())}")
-    return cls(config)
+    return cls(config, exit_policy=exit_policy)
 
 
 def _build_trading_config(args) -> TradingConfig:
@@ -193,6 +193,11 @@ def main(argv: list[str] | None = None) -> int:
         "--risk-per-trade-bps", type=float, default=_UNSET,
         help="Equity risked per trade in risk mode, bps (100 = 1%%)",
     )
+    trade.add_argument(
+        "--exit-preset", choices=sorted(EXIT_PRESETS), default=None,
+        help="Override the strategy's exit policy with a named preset "
+             "(default: the strategy's assigned preset)",
+    )
 
     args = parser.parse_args(argv)
 
@@ -221,7 +226,8 @@ def main(argv: list[str] | None = None) -> int:
         logging.getLogger().setLevel(getattr(logging, args.log_level))
 
     config = StrategyConfig()
-    strategy = _build_strategy(args.strategy, config)
+    exit_policy = EXIT_PRESETS[args.exit_preset]() if args.exit_preset else None
+    strategy = _build_strategy(args.strategy, config, exit_policy=exit_policy)
     trading_config = _build_trading_config(args)
 
     if args.mode == "historical":
