@@ -50,6 +50,11 @@ class StateStore:
 
     def __init__(self, db_path: str | Path = "trading_state.db"):
         self._db_path = str(db_path)
+        # Ensure the parent dir exists (e.g. data/live/ on first live run) — sqlite3
+        # can't open/create the file if its directory is missing.
+        parent = Path(self._db_path).parent
+        if parent != Path(""):
+            parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(self._db_path)
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.executescript(_SCHEMA)

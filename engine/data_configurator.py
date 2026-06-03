@@ -99,6 +99,7 @@ ACTIVE = DataSpec(
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 CACHE_DIR = _REPO_ROOT / "data" / "ohlcv"
 RESULTS_DIR = _REPO_ROOT / "data" / "results"
+LIVE_DIR = _REPO_ROOT / "data" / "live"
 
 _INTERVAL_MINUTES: dict[str, int] = {
     "1": 1, "3": 3, "5": 5, "15": 15, "30": 30, "60": 60,

@@ -13,7 +13,7 @@ import logging
 import sys
 
 from .backtester import Backtester
-from .data_configurator import DataSpec, load_data, save_result
+from .data_configurator import LIVE_DIR, DataSpec, load_data, save_result
 from .live import LiveEngine
 from .models import VALID_CATEGORIES, VALID_INTERVALS, StrategyName
 from .strategy_configurator import EXIT_PRESETS, StrategyConfig
@@ -121,8 +121,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--save",
-        default="chart.html",
-        help="Save chart to file (default: chart.html)",
+        default=None,
+        help=(
+            "Save chart to this path. Default is anchored to the repo root "
+            "(never the current directory): historical writes alongside the "
+            "result files at data/results/<dataset>/<strategy>.html; live writes "
+            "data/live/<symbol>_<interval>_<strategy>.html."
+        ),
     )
     parser.add_argument(
         "--poll",
@@ -132,8 +137,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--db",
-        default="trading_state.db",
-        help="SQLite database path for live state (default: trading_state.db)",
+        default=None,
+        help=(
+            "SQLite path for live state. Default: data/live/<strategy>.db "
+            "(repo-root anchored, git-ignored)."
+        ),
     )
     parser.add_argument(
         "--log-level",
@@ -259,20 +267,32 @@ def _run_historical(strategy, trading_config, args) -> int:
     json_path = save_result(result, spec)
     print(f"Results saved to {json_path.parent}")
 
-    # Build chart with indicator columns from prepare()
+    # Build chart with indicator columns from prepare(). By default the chart is
+    # written next to the JSON/CSV for this dataset (json_path.parent), keyed by
+    # strategy like its siblings, so runs don't clobber across strategies/datasets;
+    # --save overrides with an explicit path.
     prepared = strategy.prepare(df)
     signals = [s for t in result.trades for s in _trade_to_signals(t)]
+    chart_path = args.save or json_path.parent / f"{strategy.name}.html"
     build_chart(
         prepared,
         signals,
         title=f"{args.symbol} {args.interval} | {strategy.name} | {result.total_trades} trades",
-        save_path=args.save,
+        save_path=str(chart_path),
     )
+    print(f"Chart saved to {chart_path}")
 
     return 0
 
 
 def _run_live(strategy, trading_config, args) -> int:
+    # Live artifacts (chart + SQLite state) are anchored under data/live/ (never the
+    # cwd) and keyed by strategy so separate live runs don't clobber each other.
+    # --save / --db override with explicit paths.
+    chart_path = args.save or (
+        LIVE_DIR / f"{args.symbol}_{args.interval}_{strategy.name}.html"
+    )
+    db_path = args.db or (LIVE_DIR / f"{strategy.name}.db")
     engine = LiveEngine(
         strategy=strategy,
         symbol=args.symbol,
@@ -280,8 +300,8 @@ def _run_live(strategy, trading_config, args) -> int:
         category=args.category,
         num_candles=args.candles,
         poll_seconds=args.poll,
-        chart_path=args.save,
-        db_path=args.db,
+        chart_path=str(chart_path),
+        db_path=str(db_path),
         trading_config=trading_config,
     )
     engine.run()

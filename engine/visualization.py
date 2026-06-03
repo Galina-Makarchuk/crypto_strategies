@@ -4,13 +4,15 @@ Key improvements over original:
 - Signals batched into 4 traces (long_entry, short_entry, long_exit, short_exit)
   instead of one trace per signal → fast rendering even with 300+ trades.
 - Optional SuperTrend / EMA overlays.
-- Always writes to file (no fig.show() surprise browser tabs in live mode).
+- Returns the figure; writes a standalone HTML file only when save_path is given
+  (CLI / live mode). Notebooks display the returned figure inline — no stray file.
 """
 
 from __future__ import annotations
 
 import logging
 from collections import defaultdict
+from pathlib import Path
 from typing import Optional
 
 import pandas as pd
@@ -50,18 +52,24 @@ def build_chart(
     df: pd.DataFrame,
     signals: list[Signal],
     title: str = "BTCUSDT Strategy Signals",
-    save_path: str = "chart.html",
+    save_path: Optional[str] = None,
     show_volume: bool = True,
     auto_refresh: int = 0,
-) -> str:
-    """Build a candlestick chart with signal overlays and save to HTML.
+) -> go.Figure:
+    """Build a candlestick chart with signal overlays; return the Plotly figure.
+
+    If ``save_path`` is given the chart is also written there as a standalone HTML
+    file (parent dirs created as needed). With ``save_path=None`` nothing is
+    written — display the returned figure inline instead (e.g.
+    ``build_chart(...).show()`` in a notebook). The CLI and live engine always
+    pass an explicit ``save_path``.
 
     Args:
-        auto_refresh: If > 0, injects a meta-refresh tag so the browser
-                      reloads the page every N seconds. Set to your poll
-                      interval (e.g. 30) for live mode.
+        auto_refresh: If > 0 (and save_path is given), injects a meta-refresh tag
+                      so the browser reloads the page every N seconds. Set to your
+                      poll interval (e.g. 30) for live mode.
 
-    Returns the path of the saved file.
+    Returns the Plotly ``Figure``.
     """
     rows = 2 if show_volume else 1
     row_heights = [0.8, 0.2] if show_volume else [1.0]
@@ -269,15 +277,22 @@ def build_chart(
     if show_volume:
         fig.update_yaxes(title_text="Volume", row=2, col=1)
 
-    fig.write_html(save_path)
+    if save_path:
+        # Ensure the target directory exists (e.g. data/results/live/ on first run,
+        # or any new folder passed via --save) — write_html won't create parents.
+        parent = Path(save_path).parent
+        if parent != Path(""):
+            parent.mkdir(parents=True, exist_ok=True)
+        fig.write_html(save_path)
 
-    if auto_refresh > 0:
-        with open(save_path, "r") as f:
-            html = f.read()
-        meta_tag = f'<meta http-equiv="refresh" content="{auto_refresh}">'
-        html = html.replace("<head>", f"<head>{meta_tag}", 1)
-        with open(save_path, "w") as f:
-            f.write(html)
+        if auto_refresh > 0:
+            with open(save_path, "r") as f:
+                html = f.read()
+            meta_tag = f'<meta http-equiv="refresh" content="{auto_refresh}">'
+            html = html.replace("<head>", f"<head>{meta_tag}", 1)
+            with open(save_path, "w") as f:
+                f.write(html)
 
-    logger.info("Chart saved → %s", save_path)
-    return save_path
+        logger.info("Chart saved → %s", save_path)
+
+    return fig
