@@ -11,7 +11,8 @@ backtester.py supports pluggable strategies:
 
 ## Overview
 
-Most trading performance doesn't come from the idea itself, but from how entries and exits are defined and executed. This repo explores different approaches to structuring those decisions in a systematic and testable way.
+Most trading performance doesn't come from the idea itself, but from how entries and exits are defined and executed. \
+This repo explores different approaches to structuring those decisions in a systematic and testable way.
 
 Focus on:
 - Translating market behavior into rule-based signals
@@ -66,4 +67,4 @@ Build a modular framework where:
 
 ## Future Work
 
-- Adaptive parameter selection
+- Adaptive parameter selection -> done
