@@ -195,6 +195,22 @@ class StructuralTarget(_Target):
         return ctx.ref_target
 
 
+class CloseCrossTarget(ExitPolicy):
+    """Take-profit when the *close* reverts to/through a strategy-supplied level
+    (``ctx.ref_target``), filling at the close — e.g. a VWAP mean-reversion exit
+    where price closes back across the VWAP line. Close-triggered and close-filled,
+    unlike the intrabar, fill-at-level :class:`StructuralTarget`."""
+
+    def evaluate(self, ctx: ExitContext) -> Optional[ExitDecision]:
+        if ctx.ref_target is None:
+            return None
+        if ctx.direction is Direction.LONG and ctx.close >= ctx.ref_target:
+            return ExitDecision(ctx.close, ExitReason.TAKE_PROFIT)
+        if ctx.direction is Direction.SHORT and ctx.close <= ctx.ref_target:
+            return ExitDecision(ctx.close, ExitReason.TAKE_PROFIT)
+        return None
+
+
 class RrTarget(_Target):
     """Reward:risk take-profit at entry ± rr·risk, where risk = |entry − stop|.
     Needs a stop to define risk; returns no target when ``stop_price`` is unset."""

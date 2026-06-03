@@ -62,14 +62,16 @@ class VWAPBandsStrategy(BaseStrategy):
         if state.current_trade is not None:
             state.update_peak(high_i, low_i)
 
-        # ── Exit: close returns to the VWAP middle ───────────────────────────
+        # ── Exit: close returns to the VWAP middle (delegated take-profit) ───
+        # The VWAP line is the target; CloseCrossTarget fires when the close
+        # reverts to/through it and fills at the close (close-triggered).
         if state.current_trade is not None:
             trade = state.current_trade
-            if trade.direction == Direction.LONG and close_i >= vwap_i:
-                state.exit(ts, close_i, ExitReason.TAKE_PROFIT)
-                return
-            if trade.direction == Direction.SHORT and close_i <= vwap_i:
-                state.exit(ts, close_i, ExitReason.TAKE_PROFIT)
+            decision = self.exit_policy.evaluate(
+                self._exit_ctx(i, df, trade, 0.0, ref_target=vwap_i)
+            )
+            if decision is not None:
+                state.exit(ts, decision.price, decision.reason)
                 return
 
         if state.current_trade is not None:

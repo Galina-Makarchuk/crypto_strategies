@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from .exits import (
     AtrStop,
     ChandelierStop,
+    CloseCrossTarget,
     CompositeExit,
     ExitPolicy,
     FixedPctStop,
@@ -158,6 +159,8 @@ EXIT_PRESETS: dict[str, "callable[[], ExitPolicy]"] = {
     # Fixed stop + fixed target, both at strategy-supplied levels (ref_stop via
     # the entry stop_price, ref_target passed per bar). Stop-first.
     "structural":      lambda: CompositeExit(StructuralStop(), StructuralTarget()),
+    # Take-profit only, when the close reverts to a level (the VWAP mean). No stop.
+    "vwap_mean":       lambda: CloseCrossTarget(),
 }
 
 # Global default exit (covers the trend/EMA/swing group), with per-strategy
@@ -167,6 +170,11 @@ DEFAULT_EXIT = "chandelier_2atr"
 PER_STRATEGY_EXIT: dict[str, str] = {
     "order_block": "structural",
     "order_block_inv": "structural",
+    "exhaustion_reversal": "structural",
+    "impulse_flag": "structural",
+    "vwap_bands": "vwap_mean",
+    "swing_zigzag": "chandelier_3atr",      # swing_zz_stop_atr_mult default
+    "swing_zigzag_ml": "chandelier_3atr",   # ml_stop_atr_mult default
 }
 
 

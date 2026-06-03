@@ -234,18 +234,14 @@ class ExhaustionReversalStrategy(BaseStrategy):
         if state.current_trade is not None:
             trade = state.current_trade
 
-            if trade.direction == Direction.SHORT and high_i >= self._stop_price:
-                state.exit(ts, self._stop_price, ExitReason.STOP_LOSS)
-                return
-            if trade.direction == Direction.LONG and low_i <= self._stop_price:
-                state.exit(ts, self._stop_price, ExitReason.STOP_LOSS)
-                return
-
-            if trade.direction == Direction.SHORT and low_i <= self._target_price:
-                state.exit(ts, self._target_price, ExitReason.TAKE_PROFIT)
-                return
-            if trade.direction == Direction.LONG and high_i >= self._target_price:
-                state.exit(ts, self._target_price, ExitReason.TAKE_PROFIT)
+            # Fixed stop + target delegated to the exit policy (stop-first,
+            # intrabar fills). Stop sits on the trade's stop_price; target is the
+            # strategy's R:R level, supplied as ref_target.
+            decision = self.exit_policy.evaluate(
+                self._exit_ctx(i, df, trade, atr_val, ref_target=self._target_price)
+            )
+            if decision is not None:
+                state.exit(ts, decision.price, decision.reason)
                 return
 
             inv_len = self.config.exhaustion_invalidation_len

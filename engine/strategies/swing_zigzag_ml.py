@@ -139,18 +139,16 @@ class MLSwingZigZagStrategy(BaseStrategy):
         if state.current_trade is not None:
             trade = state.current_trade
 
+            # Trailing stop (optional) delegated to the exit policy; gated by
+            # ml_use_stop + a valid ATR, no return (flip-through entry may follow).
             if (
                 self.config.ml_use_stop
                 and np.isfinite(atr_val)
                 and atr_val > 0
             ):
-                trail = atr_val * self.config.ml_stop_atr_mult
-                if trade.direction == Direction.LONG:
-                    if close_i < trade.peak_price - trail:
-                        state.exit(ts, close_i, ExitReason.TRAILING_STOP)
-                else:
-                    if close_i > trade.peak_price + trail:
-                        state.exit(ts, close_i, ExitReason.TRAILING_STOP)
+                decision = self.exit_policy.evaluate(self._exit_ctx(i, df, trade, atr_val))
+                if decision is not None:
+                    state.exit(ts, decision.price, decision.reason)
 
             # Opposite-side signal above threshold → flip (exit, then re-enter).
             if state.current_trade is not None:
