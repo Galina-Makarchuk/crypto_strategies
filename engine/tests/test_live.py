@@ -10,7 +10,7 @@ import pandas as pd
 import pytest
 
 from engine.live import LiveEngine
-from engine.models import StrategyConfig
+from engine.strategy_configurator import StrategyConfig
 
 
 class _StubStrategy:

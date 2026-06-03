@@ -15,7 +15,8 @@ import sys
 from .backtester import Backtester
 from .data_configurator import DataSpec, load_data, save_result
 from .live import LiveEngine
-from .models import VALID_CATEGORIES, VALID_INTERVALS, StrategyConfig, StrategyName
+from .models import VALID_CATEGORIES, VALID_INTERVALS, StrategyName
+from .strategy_configurator import StrategyConfig
 from .trade_configurator import ACTIVE_TRADE, SizingMode, TradeDirection, TradingConfig
 from .strategies import AdaptiveSuperTrendStrategy, EMACrossoverStrategy, InverseEMACrossoverStrategy, ExhaustionReversalStrategy, ImpulseFlagStrategy, InverseOrderBlockStrategy, InverseSuperTrendStrategy, MLSwingZigZagStrategy, OrderBlockStrategy, SuperTrendStrategy, SwingBreakoutStrategy, InverseSwingBreakoutStrategy, SwingZigZagStrategy, VWAPBandsStrategy
 from .visualization import build_chart

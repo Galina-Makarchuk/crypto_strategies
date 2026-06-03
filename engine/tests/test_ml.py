@@ -158,7 +158,7 @@ class TestMLStrategySmoke:
 
     def test_strategy_loads_and_runs_backtest(self):
         from engine.backtester import Backtester
-        from engine.models import StrategyConfig
+        from engine.strategy_configurator import StrategyConfig
         from engine.strategies import MLSwingZigZagStrategy
 
         df = _make_ohlcv(600)
@@ -174,7 +174,7 @@ class TestMLStrategySmoke:
             model_path.unlink(missing_ok=True)
 
     def test_missing_model_raises(self):
-        from engine.models import StrategyConfig
+        from engine.strategy_configurator import StrategyConfig
         from engine.strategies import MLSwingZigZagStrategy
 
         cfg = StrategyConfig(ml_model_path="ml_models/does_not_exist.joblib")
@@ -283,7 +283,7 @@ class TestOrderFlow:
             OFI_FEATURE_COLUMNS, aggregate_to_bars, compute_derived_orderflow,
             merge_orderflow_features,
         )
-        from engine.models import StrategyConfig
+        from engine.strategy_configurator import StrategyConfig
         from engine.strategies import MLSwingZigZagStrategy
 
         # 1) Synthetic klines (4 days, 15m) + synthetic trades over the same window.
@@ -340,7 +340,7 @@ class TestOrderFlow:
 
         from engine.backtester import Backtester
         from engine.ml.features import FEATURE_COLUMNS_T3
-        from engine.models import StrategyConfig
+        from engine.strategy_configurator import StrategyConfig
         from engine.strategies import MLSwingZigZagStrategy
 
         # Use a real (tiny) fitted estimator so joblib can pickle it.

@@ -14,7 +14,8 @@ import pandas as pd
 
 from ..indicators import atr as calc_atr
 from ..indicators import supertrend as calc_supertrend
-from ..models import Direction, ExitReason, PositionState, StrategyConfig
+from ..models import Direction, ExitReason, PositionState
+from ..strategy_configurator import StrategyConfig
 from .base import BaseStrategy
 
 

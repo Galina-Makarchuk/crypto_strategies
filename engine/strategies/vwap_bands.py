@@ -16,7 +16,8 @@ from __future__ import annotations
 import pandas as pd
 
 from ..indicators import vwap_stdev_bands as calc_vwap_bands
-from ..models import Direction, ExitReason, PositionState, StrategyConfig
+from ..models import Direction, ExitReason, PositionState
+from ..strategy_configurator import StrategyConfig
 from .base import BaseStrategy
 
 

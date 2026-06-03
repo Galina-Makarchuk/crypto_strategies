@@ -17,7 +17,8 @@ from abc import ABC, abstractmethod
 
 import pandas as pd
 
-from ..models import Direction, PositionState, StrategyConfig
+from ..models import Direction, PositionState
+from ..strategy_configurator import StrategyConfig
 
 
 class BaseStrategy(ABC):
