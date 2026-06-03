@@ -2,7 +2,7 @@
 
 A pluggable-strategy model to test a portfolio of strategies.
 
-A lightweight research repo for comparing crypto trading strategies with a focus on how they define entry and exit points.
+A research repo for comparing crypto trading strategies with a focus on how they define entry and exit points.
 
 backtester.py supports pluggable strategies: 
 - small core
