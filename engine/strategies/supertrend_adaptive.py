@@ -71,26 +71,18 @@ class AdaptiveSuperTrendStrategy(BaseStrategy):
         # ── Exit logic ─────────────────────────────────────────────────────
         if state.current_trade is not None:
             trade = state.current_trade
-            trail = atr_val * self.config.atr_trail_mult
-
+            # Signal-flip exit stays in-strategy (regime-dependent), checked first.
             if trade.direction == Direction.LONG:
-                trailing_stop = trade.peak_price - trail
                 exit_flip = flip_down if trending else flip_up
-                if exit_flip:
-                    state.exit(ts, close, ExitReason.SIGNAL_FLIP)
-                    return
-                if close < trailing_stop:
-                    state.exit(ts, close, ExitReason.TRAILING_STOP)
-                    return
-            elif trade.direction == Direction.SHORT:
-                trailing_stop = trade.peak_price + trail
+            else:
                 exit_flip = flip_up if trending else flip_down
-                if exit_flip:
-                    state.exit(ts, close, ExitReason.SIGNAL_FLIP)
-                    return
-                if close > trailing_stop:
-                    state.exit(ts, close, ExitReason.TRAILING_STOP)
-                    return
+            if exit_flip:
+                state.exit(ts, close, ExitReason.SIGNAL_FLIP)
+                return
+            decision = self.exit_policy.evaluate(self._exit_ctx(i, df, trade, atr_val))
+            if decision is not None:
+                state.exit(ts, decision.price, decision.reason)
+                return
 
         # ── Entry logic ────────────────────────────────────────────────────
         if state.current_trade is not None or not has_flip:
@@ -99,12 +91,16 @@ class AdaptiveSuperTrendStrategy(BaseStrategy):
         if trending:
             # Normal: follow the trend
             if flip_up:
-                state.enter(Direction.LONG, ts, close)
+                state.enter(Direction.LONG, ts, close,
+                            stop_price=self._entry_stop(Direction.LONG, close, atr_val))
             elif flip_down:
-                state.enter(Direction.SHORT, ts, close)
+                state.enter(Direction.SHORT, ts, close,
+                            stop_price=self._entry_stop(Direction.SHORT, close, atr_val))
         else:
             # Inverse: fade the trend
             if flip_up:
-                state.enter(Direction.SHORT, ts, close)
+                state.enter(Direction.SHORT, ts, close,
+                            stop_price=self._entry_stop(Direction.SHORT, close, atr_val))
             elif flip_down:
-                state.enter(Direction.LONG, ts, close)
+                state.enter(Direction.LONG, ts, close,
+                            stop_price=self._entry_stop(Direction.LONG, close, atr_val))

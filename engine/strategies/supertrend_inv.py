@@ -54,24 +54,16 @@ class InverseSuperTrendStrategy(BaseStrategy):
         # ── Exit logic ─────────────────────────────────────────────────────
         if state.current_trade is not None:
             trade = state.current_trade
-            trail = atr_val * self.config.atr_trail_mult
-
-            if trade.direction == Direction.LONG:
-                trailing_stop = trade.peak_price - trail
-                if flip_up:
-                    state.exit(ts, close, ExitReason.SIGNAL_FLIP)
-                    return
-                if close < trailing_stop:
-                    state.exit(ts, close, ExitReason.TRAILING_STOP)
-                    return
-            elif trade.direction == Direction.SHORT:
-                trailing_stop = trade.peak_price + trail
-                if flip_down:
-                    state.exit(ts, close, ExitReason.SIGNAL_FLIP)
-                    return
-                if close > trailing_stop:
-                    state.exit(ts, close, ExitReason.TRAILING_STOP)
-                    return
+            # Signal-flip exit stays in-strategy, checked first (as before).
+            if (trade.direction == Direction.LONG and flip_up) or (
+                trade.direction == Direction.SHORT and flip_down
+            ):
+                state.exit(ts, close, ExitReason.SIGNAL_FLIP)
+                return
+            decision = self.exit_policy.evaluate(self._exit_ctx(i, df, trade, atr_val))
+            if decision is not None:
+                state.exit(ts, decision.price, decision.reason)
+                return
 
         # ── Entry logic (INVERTED) ─────────────────────────────────────────
         if state.current_trade is not None:
@@ -79,7 +71,9 @@ class InverseSuperTrendStrategy(BaseStrategy):
 
         if flip_up:
             # Original goes long here → we go SHORT
-            state.enter(Direction.SHORT, ts, close)
+            state.enter(Direction.SHORT, ts, close,
+                        stop_price=self._entry_stop(Direction.SHORT, close, atr_val))
         elif flip_down:
             # Original goes short here → we go LONG
-            state.enter(Direction.LONG, ts, close)
+            state.enter(Direction.LONG, ts, close,
+                        stop_price=self._entry_stop(Direction.LONG, close, atr_val))

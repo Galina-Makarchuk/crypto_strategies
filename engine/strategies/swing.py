@@ -71,29 +71,18 @@ class SwingBreakoutStrategy(BaseStrategy):
         # ── Exit logic (skip on entry bar → prevents same-bar flip) ───────
         if state.current_trade is not None:
             trade = state.current_trade
-            trail = atr_val * self.config.atr_trail_mult
-
+            # Trailing stop (delegated) is checked FIRST here, as before.
+            decision = self.exit_policy.evaluate(self._exit_ctx(i, df, trade, atr_val))
+            if decision is not None:
+                state.exit(ts, decision.price, decision.reason)
+                return  # don't enter on same bar as exit
+            # Structural cross flip (native).
             if trade.direction == Direction.LONG:
-                trailing_stop = trade.peak_price - trail
-                crossed_below_sup = any(
-                    close < lvl <= prev_close for lvl in sup_levels
-                )
-                if close < trailing_stop:
-                    state.exit(ts, close, ExitReason.TRAILING_STOP)
-                    return  # don't enter on same bar as exit
-                if crossed_below_sup:
+                if any(close < lvl <= prev_close for lvl in sup_levels):
                     state.exit(ts, close, ExitReason.SIGNAL_FLIP)
                     return
-
             elif trade.direction == Direction.SHORT:
-                trailing_stop = trade.peak_price + trail
-                crossed_above_res = any(
-                    close > lvl >= prev_close for lvl in res_levels
-                )
-                if close > trailing_stop:
-                    state.exit(ts, close, ExitReason.TRAILING_STOP)
-                    return
-                if crossed_above_res:
+                if any(close > lvl >= prev_close for lvl in res_levels):
                     state.exit(ts, close, ExitReason.SIGNAL_FLIP)
                     return
 
@@ -104,10 +93,12 @@ class SwingBreakoutStrategy(BaseStrategy):
         # Long: close crosses above any resistance level
         crossed_up = any(close > lvl >= prev_close for lvl in res_levels)
         if crossed_up:
-            state.enter(Direction.LONG, ts, close)
+            state.enter(Direction.LONG, ts, close,
+                        stop_price=self._entry_stop(Direction.LONG, close, atr_val))
             return
 
         # Short: close crosses below any support level
         crossed_down = any(close < lvl <= prev_close for lvl in sup_levels)
         if crossed_down:
-            state.enter(Direction.SHORT, ts, close)
+            state.enter(Direction.SHORT, ts, close,
+                        stop_price=self._entry_stop(Direction.SHORT, close, atr_val))

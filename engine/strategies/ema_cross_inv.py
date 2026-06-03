@@ -56,28 +56,17 @@ class InverseEMACrossoverStrategy(BaseStrategy):
         # ── Exit logic ─────────────────────────────────────────────────────
         if state.current_trade is not None:
             trade = state.current_trade
-            trail = atr_val * self.config.atr_trail_mult
-
-            if trade.direction == Direction.LONG:
-                trailing_stop = trade.peak_price - trail
-                # LONG was entered on bearish_cross; a bullish_cross would
-                # trigger a new SHORT in this strategy → signal flip.
-                if bullish_cross:
-                    state.exit(ts, close, ExitReason.SIGNAL_FLIP)
-                    return
-                if close < trailing_stop:
-                    state.exit(ts, close, ExitReason.TRAILING_STOP)
-                    return
-            elif trade.direction == Direction.SHORT:
-                trailing_stop = trade.peak_price + trail
-                # SHORT was entered on bullish_cross; a bearish_cross would
-                # trigger a new LONG in this strategy → signal flip.
-                if bearish_cross:
-                    state.exit(ts, close, ExitReason.SIGNAL_FLIP)
-                    return
-                if close > trailing_stop:
-                    state.exit(ts, close, ExitReason.TRAILING_STOP)
-                    return
+            # Signal-flip exit stays in-strategy, checked first (as before):
+            # the inverse strategy fades crosses, so the opposite cross flips it.
+            if (trade.direction == Direction.LONG and bullish_cross) or (
+                trade.direction == Direction.SHORT and bearish_cross
+            ):
+                state.exit(ts, close, ExitReason.SIGNAL_FLIP)
+                return
+            decision = self.exit_policy.evaluate(self._exit_ctx(i, df, trade, atr_val))
+            if decision is not None:
+                state.exit(ts, decision.price, decision.reason)
+                return
 
         # ── Entry logic (INVERTED) ─────────────────────────────────────────
         if state.current_trade is not None:
@@ -85,7 +74,9 @@ class InverseEMACrossoverStrategy(BaseStrategy):
 
         # Original goes LONG on bullish_cross → we go SHORT
         if bullish_cross and rsi_val > 30:
-            state.enter(Direction.SHORT, ts, close)
+            state.enter(Direction.SHORT, ts, close,
+                        stop_price=self._entry_stop(Direction.SHORT, close, atr_val))
         # Original goes SHORT on bearish_cross → we go LONG
         elif bearish_cross and rsi_val < 70:
-            state.enter(Direction.LONG, ts, close)
+            state.enter(Direction.LONG, ts, close,
+                        stop_price=self._entry_stop(Direction.LONG, close, atr_val))
