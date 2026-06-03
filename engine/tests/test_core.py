@@ -965,18 +965,30 @@ class TestRiskSizing:
         assert res.risk_sizing_fallbacks == 0
 
     def test_stopless_strategy_falls_back_to_fixed(self):
+        # A strategy that opens without a stop_price (no entry stop) must fall back
+        # to fixed-fraction sizing in RISK mode. (Uses a stub so it stays valid
+        # regardless of which strategies adopt stop-bearing exit policies.)
         from engine.backtester import Backtester
+        from engine.models import Direction
         from engine.strategy_configurator import StrategyConfig
-        from engine.strategies import SuperTrendStrategy
+        from engine.strategies.base import BaseStrategy
         from engine.trade_configurator import SizingMode, TradingConfig
 
-        df = _make_ohlcv(400, noise=3.0, seed=5)
+        class _Stopless(BaseStrategy):
+            name = "stopless_nostop"
+            def prepare(self, df):
+                return df.copy()
+            def on_bar(self, i, df, state):
+                if i == 0 and state.current_trade is None:
+                    state.enter(Direction.LONG, df.index[i], float(df["close"].iloc[i]))
+
+        df = _make_ohlcv(50)
         tc = TradingConfig(initial_equity=10_000.0, sizing_mode=SizingMode.RISK)
-        res = Backtester(SuperTrendStrategy(StrategyConfig()), trading_config=tc).run(df)
-        if res.total_trades:
-            assert res.risk_sizing_fallbacks == res.total_trades   # every trade fell back
-            assert all(t.stop_price is None for t in res.trades)
-            assert res.trades[0].notional == pytest.approx(tc.notional(10_000.0))  # fixed-fraction
+        res = Backtester(_Stopless(StrategyConfig()), trading_config=tc).run(df)
+        assert res.total_trades == 1
+        assert res.risk_sizing_fallbacks == res.total_trades   # no entry stop → fell back
+        assert all(t.stop_price is None for t in res.trades)
+        assert res.trades[0].notional == pytest.approx(tc.notional(10_000.0))  # fixed-fraction
 
     def test_bps_unchanged_fixed_vs_risk(self):
         """Golden: sizing mode must not move the bps P&L."""
