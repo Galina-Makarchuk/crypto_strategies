@@ -1,7 +1,9 @@
-"""Typed domain models for the trading system.
+"""Core domain types for the trading system.
 
-All shared types live here so every module imports from one place.
-No business logic — just data definitions and validation.
+All shared types live here so every module imports from one place: the domain
+enums, interval/category validation, the Signal/Trade records, and the
+PositionState state machine — which carries the one piece of business logic in
+this module (it enforces the entry gates and computes realized P&L on exit).
 """
 
 from __future__ import annotations

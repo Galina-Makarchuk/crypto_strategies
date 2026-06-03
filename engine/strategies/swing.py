@@ -19,7 +19,7 @@ from ..indicators import (
     detect_swing_lows,
     merge_price_levels,
 )
-from ..models import Direction, ExitReason, PositionState
+from ..core import Direction, ExitReason, PositionState
 from ..strategy_configurator import StrategyConfig
 from .base import BaseStrategy
 

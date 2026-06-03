@@ -44,7 +44,7 @@ from typing import TYPE_CHECKING
 import pandas as pd
 
 from .fetcher import BybitFetcher
-from .models import validate_category, validate_interval
+from .core import validate_category, validate_interval
 
 if TYPE_CHECKING:  # avoid importing the heavy backtester module at runtime
     from .backtester import BacktestResult
@@ -53,7 +53,7 @@ logger = logging.getLogger(__name__)
 
 
 # ── Spec ─────────────────────────────────────────────────────────────────────
-# Category validation (validate_category / VALID_CATEGORIES) lives in .models,
+# Category validation (validate_category / VALID_CATEGORIES) lives in .core,
 # shared with the fetcher and the live engine.
 
 

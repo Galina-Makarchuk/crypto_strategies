@@ -9,7 +9,7 @@ Splits the configurable surface into two orthogonal, centralized, extendable fil
 Builds on the existing `data_configurator.py` ergonomic (an editable default block + helpers; results saved via `save_result`; outputs under git-ignored `data/`). Together they form the triad: **data → strategy → trade**, composed at run time.
 
 ## Verified facts (grounded in current code)
-- `StrategyConfig` (`engine/models.py`) is a single frozen dataclass shared by all 14 strategies (~78 fields, grouped by prefix).
+- `StrategyConfig` (`engine/core.py`) is a single frozen dataclass shared by all 14 strategies (~78 fields, grouped by prefix).
 - Every strategy applies costs via `self.config.total_cost_bps()` passed to `state.exit(...)` — **54 `state.exit(` call sites** across the strategies; ~12 files have a per-`on_bar` `cost = self.config.total_cost_bps()` line.
 - `Direction` enum has **only `LONG`/`SHORT`** (no `BOTH`); 14 strategy files reference `Direction.SHORT`, i.e. strategies trade both ways today.
 - `save_result` lives in **`engine.data_configurator`** (not a separate module).
@@ -23,7 +23,7 @@ Builds on the existing `data_configurator.py` ergonomic (an editable default blo
 - `engine/trade_configurator.py` — `TradingConfig` (direction, risk, costs, stop policy) + `ACTIVE_TRADE`
 
 **Edited**
-- `engine/models.py` — remove `fee_bps`, `slippage_bps`, `risk_per_trade_pct`, `max_open_trades` + `total_cost_bps()` from `StrategyConfig`; give `PositionState` a `cost_bps` field
+- `engine/core.py` — remove `fee_bps`, `slippage_bps`, `risk_per_trade_pct`, `max_open_trades` + `total_cost_bps()` from `StrategyConfig`; give `PositionState` a `cost_bps` field
 - `engine/backtester.py` — `Backtester(..., trading_config=None)`; seed `PositionState` with the cost; apply at exit
 - `engine/strategies/*.py` (the 14) — drop the per-`on_bar` `cost = self.config.total_cost_bps()` (~12 files) and the cost arg from the 54 `state.exit(...)` calls
 - `engine/cli.py` — add `--fee-bps/--slippage-bps/--direction/--risk-per-trade/--max-open-trades`; build a `TradingConfig`

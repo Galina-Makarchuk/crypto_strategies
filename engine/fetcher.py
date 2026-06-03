@@ -19,7 +19,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from .models import VALID_INTERVALS, validate_interval
+from .core import VALID_INTERVALS, validate_interval
 
 logger = logging.getLogger(__name__)
 

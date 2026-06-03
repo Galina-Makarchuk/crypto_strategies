@@ -34,7 +34,7 @@ pytest engine/tests/test_core.py -v
 pytest engine/tests/test_core.py::TestATR::test_atr_shape -v   # single test
 ```
 
-Valid `--strategy` values live on [StrategyName](engine/models.py) — 14 strategies incl. `swing`(+`_inv`), `ema`(+`_inv`), `supertrend`(+`_inv`/`_adaptive`), `exhaustion_reversal`, `impulse_flag`, `order_block`(+`_inv`), `vwap_bands`, `swing_zigzag`(+`_ml`). Valid intervals: [VALID_INTERVALS](engine/models.py); valid `--category`: `linear`, `inverse`.
+Valid `--strategy` values live on [StrategyName](engine/core.py) — 14 strategies incl. `swing`(+`_inv`), `ema`(+`_inv`), `supertrend`(+`_inv`/`_adaptive`), `exhaustion_reversal`, `impulse_flag`, `order_block`(+`_inv`), `vwap_bands`, `swing_zigzag`(+`_ml`). Valid intervals: [VALID_INTERVALS](engine/core.py); valid `--category`: `linear`, `inverse`.
 
 ## Architecture — the big picture
 
@@ -48,21 +48,21 @@ The system is organized around one invariant: **look-ahead bias is structurally 
    - `on_bar(i, df, state)` — evaluate bar `i`. **May only read `df.iloc[0..i]`**. This is the contract that prevents look-ahead; both the backtester and the live engine depend on it.
 3. **Runners** — [Backtester.run()](engine/backtester.py#L73) iterates `on_bar` across every bar; [LiveEngine._tick()](engine/live.py#L110) calls `on_bar` only on the last bar. Same strategy code runs in both modes.
 
-### Signals, positions, and P&L flow through [models.py](engine/models.py)
+### Signals, positions, and P&L flow through [core.py](engine/core.py)
 
-`on_bar` never returns a signal — it calls `state.enter()` / `state.exit()` on a [PositionState](engine/models.py#L149). The state machine rejects invalid transitions (double-entry, exit-while-flat), which means strategy code does not need to track position status itself.
+`on_bar` never returns a signal — it calls `state.enter()` / `state.exit()` on a [PositionState](engine/core.py#L151). The state machine rejects invalid transitions (double-entry, exit-while-flat), which means strategy code does not need to track position status itself.
 
 `state.exit(ts, price, reason)` is where P&L is computed. Round-trip fees + slippage come from `cost_bps`, which the **runner seeds onto `PositionState`** from [TradingConfig.total_cost_bps()](engine/trade_configurator.py) (see "Two configs" below) — strategies no longer pass cost themselves. The direction gate and daily-loss overlay are likewise enforced in `PositionState.enter()` from runner-seeded fields, so `on_bar` stays free of trade-level policy.
 
 ### Trailing stop = peak-tracked, not bar-tracked
 
-Every `on_bar` implementation must call `state.update_peak(high, low)` before checking exits when a position is open. The trailing stop compares against [Trade.peak_price](engine/models.py#L142) (high-water for longs, low-water for shorts) — **not** the previous bar's close. This was bug #4 in the v1 rewrite; the pattern is load-bearing.
+Every `on_bar` implementation must call `state.update_peak(high, low)` before checking exits when a position is open. The trailing stop compares against [Trade.peak_price](engine/core.py#L127) (high-water for longs, low-water for shorts) — **not** the previous bar's close. This was bug #4 in the v1 rewrite; the pattern is load-bearing.
 
 ### Two configs: strategy params vs trade params
 
 Tunable numbers split across two frozen dataclasses by **who they belong to**:
 
-- **[StrategyConfig](engine/strategy_configurator.py)** (in [strategy_configurator.py](engine/strategy_configurator.py)) — *how signals are generated*: indicator periods, multipliers, and the per-strategy structural levels the strategy still computes. Add new signal-logic knobs here. Consumed by strategies via `self.config`. (Moved out of `models.py`, which now holds only domain types + the `PositionState` state machine.) This file **also** holds the exit-policy catalog — see "Exit policies" below.
+- **[StrategyConfig](engine/strategy_configurator.py)** (in [strategy_configurator.py](engine/strategy_configurator.py)) — *how signals are generated*: indicator periods, multipliers, and the per-strategy structural levels the strategy still computes. Add new signal-logic knobs here. Consumed by strategies via `self.config`. (Moved out of `core.py`, which now holds only domain types + the `PositionState` state machine.) This file **also** holds the exit-policy catalog — see "Exit policies" below.
 - **[TradingConfig](engine/trade_configurator.py)** (in [trade_configurator.py](engine/trade_configurator.py)) — *how you trade any signal*, independent of strategy: `initial_equity`, `position_size_bps`, `leverage`, `sizing_mode`, `risk_per_trade_bps`, `fee_bps`, `slippage_bps`, `max_daily_loss_bps`, `max_holding_bars`, and the `direction` gate (long/short/both). Edit the `ACTIVE_TRADE` block once and it's the **project-wide default**: notebooks pass it directly, and CLI runs *seed from it* — each `--flag` overrides only that one field (so the CLI and notebooks can't silently diverge). Mirrors `data_configurator`'s `ACTIVE`. `total_cost_bps()` is **derived** (`2*(fee+slippage)`), never stored.
 
   **Sizing modes** (`sizing_mode`): `FIXED` deploys `position_size_bps × leverage` of equity per trade; `RISK` sizes each trade so a stop-out loses `risk_per_trade_bps` of equity (`risk$ ÷ stop-distance`, leverage not applied). RISK is **stop-where-available**: a trade is risk-sized when its exit policy supplies an entry stop (`ExitPolicy.initial_stop`, recorded on `Trade.stop_price` via `state.enter(..., stop_price=...)`) — which now covers every strategy except the genuinely stopless ones (`vwap_bands`, `swing_zigzag`/`_ml`), which **fall back to fixed-fraction**, counted in `risk_sizing_fallbacks` and logged so it's never silent.
@@ -91,7 +91,7 @@ Each strategy is **assigned** a policy in [strategy_configurator.py](engine/stra
 
 1. Create `engine/strategies/<name>.py` subclassing `BaseStrategy`, set `name = "<name>"`.
 2. Implement `prepare` (copy df, add indicator columns) and `on_bar` (update peak → check exit → check entry, in that order). For price stops/targets, delegate to `self.exit_policy.evaluate(self._exit_ctx(...))` and keep signal-based exits native; for sizing, seed `state.enter(..., stop_price=self._entry_stop(...))`.
-3. Register the class in [strategies/__init__.py](engine/strategies/__init__.py) and add an enum member to [StrategyName](engine/models.py#L34) plus a dispatch entry in [cli._build_strategy()](engine/cli.py).
+3. Register the class in [strategies/__init__.py](engine/strategies/__init__.py) and add an enum member to [StrategyName](engine/core.py#L36) plus a dispatch entry in [cli._build_strategy()](engine/cli.py).
 4. Add any new signal knobs to [StrategyConfig](engine/strategy_configurator.py); assign/define its exit policy in the same file (`EXIT_PRESETS` + `PER_STRATEGY_EXIT`, else it inherits `DEFAULT_EXIT`). Trade-level knobs go on [TradingConfig](engine/trade_configurator.py) instead.
 5. Add a golden snapshot in [test_golden.py](engine/tests/test_golden.py) so its trades are pinned.
 
@@ -101,4 +101,4 @@ Each strategy is **assigned** a policy in [strategy_configurator.py](engine/stra
 
 ## Plans
 
-- [docs/config-split-plan.md](docs/config-split-plan.md) — the original config-split design. The **trade side is now implemented** as [trade_configurator.py](engine/trade_configurator.py) (costs, sizing/equity, direction gate, leverage, daily-loss, max-holding) with the equity layer wired through the backtester. The **strategy side** (`strategy_configurator.py` — moving `StrategyConfig` out of `models.py` into a per-strategy `PARAMS` registry + `sweep()`) is still pending; `StrategyConfig` continues to live in `models.py` for now.
+- [docs/config-split-plan.md](docs/config-split-plan.md) — the original config-split design. The **trade side is now implemented** as [trade_configurator.py](engine/trade_configurator.py) (costs, sizing/equity, direction gate, leverage, daily-loss, max-holding) with the equity layer wired through the backtester. The **strategy side** is partially done — `StrategyConfig` has been extracted into [strategy_configurator.py](engine/strategy_configurator.py) (out of [core.py](engine/core.py)), but the planned refactor into a per-strategy `PARAMS` registry + `sweep()` is still pending; it remains a single frozen dataclass for now.

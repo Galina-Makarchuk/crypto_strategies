@@ -15,7 +15,7 @@ import sys
 from .backtester import Backtester
 from .data_configurator import LIVE_DIR, DataSpec, load_data, save_result
 from .live import LiveEngine
-from .models import VALID_CATEGORIES, VALID_INTERVALS, StrategyName
+from .core import VALID_CATEGORIES, VALID_INTERVALS, StrategyName
 from .strategy_configurator import EXIT_PRESETS, StrategyConfig
 from .trade_configurator import ACTIVE_TRADE, SizingMode, TradeDirection, TradingConfig
 from .strategies import AdaptiveSuperTrendStrategy, EMACrossoverStrategy, InverseEMACrossoverStrategy, ExhaustionReversalStrategy, ImpulseFlagStrategy, InverseOrderBlockStrategy, InverseSuperTrendStrategy, MLSwingZigZagStrategy, OrderBlockStrategy, SuperTrendStrategy, SwingBreakoutStrategy, InverseSwingBreakoutStrategy, SwingZigZagStrategy, VWAPBandsStrategy
@@ -310,7 +310,7 @@ def _run_live(strategy, trading_config, args) -> int:
 
 def _trade_to_signals(trade):
     """Convert a Trade object back to Signal-like dicts for the chart."""
-    from .models import Signal, SignalAction
+    from .core import Signal, SignalAction
 
     signals = []
     if trade.entry_ts:

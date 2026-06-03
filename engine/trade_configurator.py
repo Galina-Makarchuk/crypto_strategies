@@ -9,7 +9,7 @@ genuinely the project-wide default, mirroring the ACTIVE dataset block in
 :mod:`engine.data_configurator`.
 
 Strategy-specific parameters (indicator periods, ATR/RR stops, etc.) stay on
-``StrategyConfig`` in :mod:`engine.models` — they describe *how signals are
+``StrategyConfig`` in :mod:`engine.core` — they describe *how signals are
 generated* and are not configured here.
 
 Units: everything bps-denominated follows the engine convention — 1 bp = 0.01%,
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 class TradeDirection(Enum):
     """Which sides a run may take — a gate applied to every signal a strategy
-    emits. Distinct from :class:`engine.models.Direction` (the signed side of an
+    emits. Distinct from :class:`engine.core.Direction` (the signed side of an
     individual trade): a strategy still decides long/short per setup; this only
     filters which of those are allowed to open."""
 

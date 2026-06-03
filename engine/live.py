@@ -21,7 +21,7 @@ from typing import Optional
 import pandas as pd
 
 from .fetcher import BybitFetcher
-from .models import ExitReason, PositionState, validate_category, validate_interval
+from .core import ExitReason, PositionState, validate_category, validate_interval
 from .persistence import StateStore
 from .strategies.base import BaseStrategy
 from .trade_configurator import TradingConfig, warn_if_inverse_gated

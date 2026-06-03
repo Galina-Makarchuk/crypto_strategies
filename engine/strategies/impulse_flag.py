@@ -38,7 +38,7 @@ import pandas as pd
 
 from ..indicators import atr as calc_atr
 from ..indicators import ema as calc_ema
-from ..models import Direction, ExitReason, PositionState
+from ..core import Direction, ExitReason, PositionState
 from ..strategy_configurator import StrategyConfig
 from .base import BaseStrategy
 

@@ -208,7 +208,7 @@ def _make_result():
     from datetime import datetime, timezone
 
     from engine.backtester import BacktestResult
-    from engine.models import Direction, ExitReason, Trade
+    from engine.core import Direction, ExitReason, Trade
 
     trade = Trade(
         direction=Direction.LONG,

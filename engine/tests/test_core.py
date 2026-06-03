@@ -140,7 +140,7 @@ class TestSwingDetection:
 
 class TestPositionState:
     def test_enter_exit_cycle(self):
-        from engine.models import Direction, ExitReason, PositionState, PositionStatus
+        from engine.core import Direction, ExitReason, PositionState, PositionStatus
 
         state = PositionState()
         ts = datetime(2025, 1, 1, tzinfo=timezone.utc)
@@ -160,7 +160,7 @@ class TestPositionState:
         assert state.closed_trades[0].pnl_bps == pytest.approx(500 - 12.0)
 
     def test_double_entry_rejected(self):
-        from engine.models import Direction, PositionState
+        from engine.core import Direction, PositionState
 
         state = PositionState()
         ts = datetime(2025, 1, 1, tzinfo=timezone.utc)
@@ -169,7 +169,7 @@ class TestPositionState:
         assert sig is None  # rejected
 
     def test_trailing_peak_updates(self):
-        from engine.models import Direction, PositionState
+        from engine.core import Direction, PositionState
 
         state = PositionState()
         ts = datetime(2025, 1, 1, tzinfo=timezone.utc)
@@ -182,7 +182,7 @@ class TestPositionState:
         assert state.current_trade.peak_price == 110.0  # doesn't decrease
 
     def test_short_trailing_peak(self):
-        from engine.models import Direction, PositionState
+        from engine.core import Direction, PositionState
 
         state = PositionState()
         ts = datetime(2025, 1, 1, tzinfo=timezone.utc)
@@ -201,7 +201,7 @@ class TestPositionState:
 class TestEMACrossoverStrategy:
     def test_no_lookahead(self):
         """Strategy should produce same results regardless of future data."""
-        from engine.models import PositionState
+        from engine.core import PositionState
         from engine.strategy_configurator import StrategyConfig
         from engine.strategies import EMACrossoverStrategy
 
@@ -231,7 +231,7 @@ class TestEMACrossoverStrategy:
 
 class TestSuperTrendStrategy:
     def test_entries_on_trend_flip(self):
-        from engine.models import PositionState, SignalAction
+        from engine.core import PositionState, SignalAction
         from engine.strategy_configurator import StrategyConfig
         from engine.strategies import SuperTrendStrategy
 
@@ -301,7 +301,7 @@ class TestExhaustionReversalStrategy:
         return df
 
     def test_fires_short_on_crafted_pattern(self):
-        from engine.models import Direction, PositionState, SignalAction
+        from engine.core import Direction, PositionState, SignalAction
         from engine.strategy_configurator import StrategyConfig
         from engine.strategies import ExhaustionReversalStrategy
 
@@ -335,7 +335,7 @@ class TestExhaustionReversalStrategy:
         assert all(t.is_closed for t in result.trades)
 
     def test_no_lookahead(self):
-        from engine.models import PositionState
+        from engine.core import PositionState
         from engine.strategy_configurator import StrategyConfig
         from engine.strategies import ExhaustionReversalStrategy
 
@@ -404,7 +404,7 @@ class TestVWAPBandsStrategy:
         assert all(t.is_closed for t in result.trades)
 
     def test_no_lookahead(self):
-        from engine.models import PositionState
+        from engine.core import PositionState
         from engine.strategy_configurator import StrategyConfig
         from engine.strategies import VWAPBandsStrategy
 
@@ -488,7 +488,7 @@ class TestSwingZigZagStrategy:
         assert all(t.is_closed for t in result.trades)
 
     def test_no_lookahead(self):
-        from engine.models import PositionState
+        from engine.core import PositionState
         from engine.strategy_configurator import StrategyConfig
         from engine.strategies import SwingZigZagStrategy
 
@@ -567,7 +567,7 @@ class TestBacktester:
     def _bt_with_trades(pnls: list[float]):
         """Build a Backtester + PositionState pre-loaded with synthetic closed trades."""
         from engine.backtester import Backtester
-        from engine.models import Direction, ExitReason, PositionState, Trade
+        from engine.core import Direction, ExitReason, PositionState, Trade
         from engine.strategy_configurator import StrategyConfig
         from engine.strategies.base import BaseStrategy
 
@@ -640,7 +640,7 @@ class TestBacktester:
     def test_force_close_path(self):
         """A strategy that opens but never exits should be force-closed by run()."""
         from engine.backtester import Backtester
-        from engine.models import Direction, ExitReason, PositionState
+        from engine.core import Direction, ExitReason, PositionState
         from engine.strategy_configurator import StrategyConfig
         from engine.strategies.base import BaseStrategy
 
@@ -671,7 +671,7 @@ class TestConfig:
         assert config.total_cost_bps() == 12.0  # 2 * (4 + 2)
 
     def test_interval_validation(self):
-        from engine.models import validate_interval
+        from engine.core import validate_interval
 
         assert validate_interval("15") == "15"
         with pytest.raises(ValueError):
@@ -716,7 +716,7 @@ class TestTradingConfig:
 
 class TestDirectionGate:
     def test_short_blocked_when_long_only(self):
-        from engine.models import Direction, PositionState
+        from engine.core import Direction, PositionState
 
         state = PositionState(allow_long=True, allow_short=False)
         ts = datetime(2025, 1, 1, tzinfo=timezone.utc)
@@ -726,7 +726,7 @@ class TestDirectionGate:
 
 class TestDailyLossHalt:
     def test_halts_after_daily_cap_then_resets_next_day(self):
-        from engine.models import Direction, ExitReason, PositionState
+        from engine.core import Direction, ExitReason, PositionState
 
         ts = datetime(2025, 1, 1, tzinfo=timezone.utc)
         state = PositionState(max_daily_loss_bps=100.0)
@@ -782,7 +782,7 @@ class TestEquityLayer:
 class TestMaxHolding:
     def test_force_close_after_max_bars(self):
         from engine.backtester import Backtester
-        from engine.models import Direction, ExitReason
+        from engine.core import Direction, ExitReason
         from engine.strategy_configurator import StrategyConfig
         from engine.strategies.base import BaseStrategy
         from engine.trade_configurator import TradingConfig
@@ -855,7 +855,7 @@ class TestCLITradeConfig:
 
 class TestSuppressionObservable:
     def test_counter_increments_on_blocked_side(self):
-        from engine.models import Direction, PositionState
+        from engine.core import Direction, PositionState
 
         state = PositionState(allow_long=True, allow_short=False)
         ts = datetime(2025, 1, 1, tzinfo=timezone.utc)
@@ -865,7 +865,7 @@ class TestSuppressionObservable:
 
     def test_long_only_run_surfaces_suppressions(self):
         from engine.backtester import Backtester
-        from engine.models import Direction
+        from engine.core import Direction
         from engine.strategy_configurator import StrategyConfig
         from engine.strategies import SuperTrendStrategy
         from engine.trade_configurator import TradeDirection, TradingConfig
@@ -934,7 +934,7 @@ class TestRiskSizing:
     def test_stop_out_loses_the_risk_budget(self):
         """A trade exiting at its stop should lose ≈ risk_per_trade_bps of equity."""
         from engine.backtester import Backtester
-        from engine.models import Direction
+        from engine.core import Direction
         from engine.strategy_configurator import StrategyConfig
         from engine.strategies.base import BaseStrategy
         from engine.trade_configurator import SizingMode, TradingConfig
@@ -969,7 +969,7 @@ class TestRiskSizing:
         # to fixed-fraction sizing in RISK mode. (Uses a stub so it stays valid
         # regardless of which strategies adopt stop-bearing exit policies.)
         from engine.backtester import Backtester
-        from engine.models import Direction
+        from engine.core import Direction
         from engine.strategy_configurator import StrategyConfig
         from engine.strategies.base import BaseStrategy
         from engine.trade_configurator import SizingMode, TradingConfig
@@ -1022,7 +1022,7 @@ class TestExitPolicies:
 
     def test_chandelier_trails_from_peak_on_close(self):
         from engine.exits import ChandelierStop
-        from engine.models import Direction, ExitReason
+        from engine.core import Direction, ExitReason
 
         p = ChandelierStop(atr_mult=3.0)
         # long, entry 100 → initial stop 100 − 3*2 = 94
@@ -1037,7 +1037,7 @@ class TestExitPolicies:
         # SHORT: peak_price is the low-water mark; stop sits ABOVE it and triggers
         # when close rises through it (matches supertrend's `close > peak + trail`).
         from engine.exits import ChandelierStop
-        from engine.models import Direction, ExitReason
+        from engine.core import Direction, ExitReason
 
         p = ChandelierStop(atr_mult=3.0)
         # short, entry 100 → initial stop 100 + 3*2 = 106
@@ -1050,7 +1050,7 @@ class TestExitPolicies:
 
     def test_fixed_stops_trigger_intrabar_at_level(self):
         from engine.exits import AtrStop, FixedPctStop
-        from engine.models import Direction, ExitReason
+        from engine.core import Direction, ExitReason
 
         # AtrStop long: level fixed at entry 100 − 1.5*2 = 97, read back via stop_price
         assert AtrStop(1.5).initial_stop(self._ctx(Direction.LONG)) == pytest.approx(97.0)
@@ -1062,7 +1062,7 @@ class TestExitPolicies:
 
     def test_structural_stop_uses_ref_then_recorded_level(self):
         from engine.exits import StructuralStop
-        from engine.models import Direction, ExitReason
+        from engine.core import Direction, ExitReason
 
         p = StructuralStop()
         assert p.initial_stop(self._ctx(Direction.LONG, ref_stop=95.0)) == 95.0
@@ -1071,7 +1071,7 @@ class TestExitPolicies:
 
     def test_targets(self):
         from engine.exits import FixedPctTarget, RrTarget
-        from engine.models import Direction, ExitReason
+        from engine.core import Direction, ExitReason
 
         # fixed % target, long 100 + 3% = 103, hit intrabar
         d = FixedPctTarget(3.0).evaluate(self._ctx(Direction.LONG, high=103.5))
@@ -1085,7 +1085,7 @@ class TestExitPolicies:
 
     def test_composite_is_stop_first(self):
         from engine.exits import CompositeExit, RrTarget, StructuralStop
-        from engine.models import Direction, ExitReason
+        from engine.core import Direction, ExitReason
 
         stop = StructuralStop()
         # long entry 100, stop 98, 2R target 104; a bar that pierces BOTH (low 97, high 105)

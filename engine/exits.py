@@ -6,7 +6,7 @@ one interface (:class:`ExitPolicy`) rather than separate hierarchies.
 
 Policies are pure *mechanisms*; they're configured/selected in
 ``strategy_configurator.py`` and (later) injected into strategies. This module
-depends only on ``models`` (Direction/ExitReason) — never on strategies — so it
+depends only on ``core`` (Direction/ExitReason) — never on strategies — so it
 sits cleanly below them in the import graph.
 
 Two fill conventions, chosen to mirror the strategies they'll replace:
@@ -25,7 +25,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Optional
 
-from .models import Direction, ExitReason
+from .core import Direction, ExitReason
 
 
 @dataclass(frozen=True)

@@ -9,7 +9,7 @@ from __future__ import annotations
 import pandas as pd
 
 from ..indicators import atr, ema, rsi
-from ..models import Direction, ExitReason, PositionState
+from ..core import Direction, ExitReason, PositionState
 from ..strategy_configurator import StrategyConfig
 from .base import BaseStrategy
 

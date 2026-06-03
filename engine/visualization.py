@@ -19,7 +19,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from .models import Signal, SignalAction, Direction
+from .core import Signal, SignalAction, Direction
 
 logger = logging.getLogger(__name__)
 

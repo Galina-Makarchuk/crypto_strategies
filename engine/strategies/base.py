@@ -19,7 +19,7 @@ from typing import Optional
 import pandas as pd
 
 from ..exits import ExitContext, ExitPolicy
-from ..models import Direction, PositionState, Trade
+from ..core import Direction, PositionState, Trade
 from ..strategy_configurator import StrategyConfig, exit_policy_for
 
 

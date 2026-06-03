@@ -37,7 +37,7 @@ from ..ml.features import (
 )
 from ..ml.labels import LABEL_HOLD, LABEL_LONG, LABEL_SHORT
 from ..ml.order_flow import OFI_FEATURE_COLUMNS
-from ..models import Direction, ExitReason, PositionState
+from ..core import Direction, ExitReason, PositionState
 from ..strategy_configurator import StrategyConfig
 from ..swings import wilder_atr
 from .base import BaseStrategy

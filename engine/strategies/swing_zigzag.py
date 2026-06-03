@@ -20,7 +20,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from ..models import Direction, ExitReason, PositionState
+from ..core import Direction, ExitReason, PositionState
 from ..strategy_configurator import StrategyConfig
 from ..swings import detect_swings, wilder_atr
 from .base import BaseStrategy

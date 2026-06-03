@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
-from .models import ExitReason, PositionState, Trade
+from .core import ExitReason, PositionState, Trade
 from .strategies.base import BaseStrategy
 from .trade_configurator import SizingMode, TradingConfig, warn_if_inverse_gated
 

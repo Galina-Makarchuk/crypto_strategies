@@ -24,7 +24,7 @@ python -m engine --strategy ema --log-json --log-level DEBUG
 
 ```
 engine/
-├── models.py                    # Typed enums, configs, Signal/Trade/PositionState
+├── core.py                      # Typed enums, validation, Signal/Trade/PositionState
 ├── indicators.py                # Pure functions: ATR, EMA, RSI, ADX, SuperTrend, swing detection
 ├── fetcher.py                   # Bybit v5 API client with retry + rate limiting
 ├── backtester.py                # Event-driven bar-by-bar backtester
@@ -42,7 +42,7 @@ engine/
 │   ├── supertrend_adaptive.py   # ADX-regime-gated SuperTrend (trend vs range)
 │   └── exhaustion_reversal.py   # Push → stall → volume-backed reversal
 └── tests/
-    └── test_core.py             # 22 tests covering indicators, models, strategies
+    └── test_core.py             # 22 tests covering indicators, core types, strategies
 ```
 
 ## Key Design Decisions

@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from .models import Direction, ExitReason, PositionState, PositionStatus, Trade
+from .core import Direction, ExitReason, PositionState, PositionStatus, Trade
 
 logger = logging.getLogger(__name__)
 

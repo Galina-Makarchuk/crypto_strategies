@@ -5,16 +5,16 @@ This is the strategy half of the config split (the trade half is
 
   * :class:`StrategyConfig` — *how signals are generated*: indicator periods,
     multipliers, and per-strategy structural knobs. (Moved here from
-    ``models.py``; ``models`` now holds only domain types + the state machine.)
+    ``core.py``; ``core`` now holds only domain types + the state machine.)
   * the **exit/TP policy catalog** — named presets built from the mechanisms in
     ``engine.exits``, plus a string-keyed per-strategy assignment. This is how
     stop-loss / take-profit behaviour is selected and (later) injected into a
     strategy.
 
-Import-graph note: this module may import ``exits`` (and therefore ``models``)
+Import-graph note: this module may import ``exits`` (and therefore ``core``)
 but must NEVER import strategy classes — per-strategy assignment is keyed by the
 string ``name``, so the arrow stays ``strategies → strategy_configurator →
-exits → models`` with no cycle.
+exits → core`` with no cycle.
 """
 
 from __future__ import annotations
