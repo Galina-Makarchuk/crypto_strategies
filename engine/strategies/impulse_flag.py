@@ -332,30 +332,27 @@ class ImpulseFlagStrategy(BaseStrategy):
         if state.current_trade is not None:
             trade = state.current_trade
 
-            if trade.direction == Direction.LONG:
-                stop_hit = low_i <= self._active_stop
-                t1_hit = (not self._t1_hit) and high_i >= self._t1
-                t2_hit = high_i >= self._t2
-            else:
-                stop_hit = high_i >= self._active_stop
-                t1_hit = (not self._t1_hit) and low_i <= self._t1
-                t2_hit = low_i <= self._t2
-
-            # Pessimistic ordering: if stop touched, it wins the bar.
-            if stop_hit:
-                state.exit(ts, self._active_stop, ExitReason.STOP_LOSS)
+            # Stop (dynamic — may be BE-shifted) + T2 target, delegated to the
+            # exit policy. Stop-first (pessimistic): ref_stop tracks the live
+            # active stop, ref_target is T2; both fill intrabar at their level.
+            decision = self.exit_policy.evaluate(
+                self._exit_ctx(i, df, trade, 0.0,
+                               ref_stop=self._active_stop, ref_target=self._t2)
+            )
+            if decision is not None:
+                state.exit(ts, decision.price, decision.reason)
                 self._reset_trade_state()
                 return
 
+            # T1 breakeven shift (native — modifies the stop for later bars, no exit).
+            if trade.direction == Direction.LONG:
+                t1_hit = (not self._t1_hit) and high_i >= self._t1
+            else:
+                t1_hit = (not self._t1_hit) and low_i <= self._t1
             if t1_hit:
                 self._t1_hit = True
                 if self.config.flag_be_shift_after_t1:
                     self._active_stop = trade.entry_price
-
-            if t2_hit:
-                state.exit(ts, self._t2, ExitReason.TAKE_PROFIT)
-                self._reset_trade_state()
-                return
             return
 
         # ── Flat: manage pending stop order ──────────────────────────────

@@ -141,13 +141,26 @@ class FixedPctStop(_FixedStop):
         return ctx.entry_price * (1.0 + self.frac)
 
 
-class StructuralStop(_FixedStop):
-    """Fixed stop at a strategy-supplied level (``ctx.ref_stop``) — e.g. just
-    beyond an order-block extreme or a flag's cluster edge. The strategy computes
-    the level; this policy provides the stop mechanism."""
+class StructuralStop(ExitPolicy):
+    """Stop at a strategy-supplied level — e.g. just beyond an order-block extreme,
+    or a flag stop that the strategy moves to breakeven. Uses ``ctx.ref_stop`` when
+    supplied (so the strategy can move the stop per bar), else the trade's entry
+    ``stop_price``. Intrabar trigger, fills at the level."""
 
     def initial_stop(self, ctx: ExitContext) -> Optional[float]:
         return ctx.ref_stop
+
+    def evaluate(self, ctx: ExitContext) -> Optional[ExitDecision]:
+        lvl = ctx.ref_stop if ctx.ref_stop is not None else ctx.stop_price
+        if lvl is None:
+            return None
+        if ctx.direction is Direction.LONG:
+            if ctx.low <= lvl:
+                return ExitDecision(lvl, ExitReason.STOP_LOSS)
+        else:
+            if ctx.high >= lvl:
+                return ExitDecision(lvl, ExitReason.STOP_LOSS)
+        return None
 
 
 # ── Targets (take-profits) ─────────────────────────────────────────────────────

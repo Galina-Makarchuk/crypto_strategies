@@ -69,6 +69,66 @@ def _golden_df(n: int = 1500) -> pd.DataFrame:
     )
 
 
+IMPULSE_GOLDEN = pathlib.Path(__file__).parent / "golden_impulse_flag.json"
+
+
+def _impulse_df(n: int = 900) -> pd.DataFrame:
+    """Deterministic impulse+consolidation+breakout pattern stream — the golden
+    _golden_df yields 0 impulse_flag trades, so this dedicated set exercises its
+    stop / T1-breakeven / T2 / expiry paths."""
+    rng = np.random.RandomState(0)
+    rows = []
+    price = 100.0
+    while len(rows) < n:
+        for _ in range(rng.randint(6, 12)):
+            o = price; c = price + rng.randn() * 0.4
+            h = max(o, c) + abs(rng.randn()) * 0.2; l = min(o, c) - abs(rng.randn()) * 0.2
+            rows.append((o, h, l, c, 10 + abs(rng.randn()) * 3)); price = c
+        d = 1 if rng.rand() > 0.5 else -1                      # impulse bar
+        o = price; c = price + d * rng.uniform(2.5, 4.0)
+        h, l = (c + 0.05, o - 0.05) if d > 0 else (o + 0.05, c - 0.05)
+        rows.append((o, h, l, c, 60 + abs(rng.randn()) * 10)); price = c
+        for _ in range(3):                                     # consolidation
+            o = price; c = price + rng.randn() * 0.25
+            h = max(o, c) + 0.1; l = min(o, c) - 0.1
+            rows.append((o, h, l, c, 8 + abs(rng.randn()) * 2)); price = c
+        o = price; c = price + d * rng.uniform(1.0, 2.0)       # breakout
+        h = max(o, c) + 0.1; l = min(o, c) - 0.1
+        rows.append((o, h, l, c, 30.0)); price = c
+    rows = rows[:n]
+    idx = pd.date_range("2024-01-01", periods=n, freq="5min", tz="UTC")
+    df = pd.DataFrame(rows, columns=["open", "high", "low", "close", "volume"], index=idx)
+    return df.assign(turnover=df["close"] * df["volume"])
+
+
+def _trades_of(result) -> list:
+    return [
+        [
+            t.entry_ts.isoformat() if t.entry_ts else None,
+            round(t.entry_price, 6),
+            t.exit_ts.isoformat() if t.exit_ts else None,
+            round(t.exit_price, 6),
+            t.exit_reason.value if t.exit_reason else None,
+            t.direction.value,
+        ]
+        for t in result.trades
+    ]
+
+
+def _impulse_signature() -> list:
+    strat = S.ImpulseFlagStrategy(StrategyConfig())
+    return _trades_of(Backtester(strat, trading_config=TradingConfig()).run(_impulse_df(), interval="5"))
+
+
+def _write_impulse_fixture() -> None:
+    IMPULSE_GOLDEN.write_text(json.dumps(_impulse_signature(), indent=1))
+    print("wrote", IMPULSE_GOLDEN.name, len(_impulse_signature()), "trades")
+
+
+def test_impulse_flag_crafted_parity():
+    assert _impulse_signature() == json.loads(IMPULSE_GOLDEN.read_text())
+
+
 def _signature(strat_cls) -> list:
     strat = strat_cls(StrategyConfig())
     result = Backtester(strat, trading_config=TradingConfig()).run(_golden_df(), interval="15")
