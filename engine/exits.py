@@ -5,9 +5,10 @@ whether to close the open position and at what price/reason. So both live behind
 one interface (:class:`ExitPolicy`) rather than separate hierarchies.
 
 Policies are pure *mechanisms*; they're configured/selected in
-``strategy_configurator.py`` and (later) injected into strategies. This module
-depends only on ``core`` (Direction/ExitReason) — never on strategies — so it
-sits cleanly below them in the import graph.
+``strategy_configurator.py`` and injected into strategies (``BaseStrategy``
+sets ``self.exit_policy``). This module depends only on ``core``
+(Direction/ExitReason) — never on strategies — so it sits cleanly below them
+in the import graph.
 
 Two fill conventions, chosen to mirror the strategies they'll replace:
   * **Trailing stop** (chandelier) triggers on the *close* and fills at the close.

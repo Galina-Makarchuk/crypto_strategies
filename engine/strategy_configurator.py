@@ -8,8 +8,9 @@ This is the strategy half of the config split (the trade half is
     ``core.py``; ``core`` now holds only domain types + the state machine.)
   * the **exit/TP policy catalog** — named presets built from the mechanisms in
     ``engine.exits``, plus a string-keyed per-strategy assignment. This is how
-    stop-loss / take-profit behaviour is selected and (later) injected into a
-    strategy.
+    stop-loss / take-profit behaviour is selected and injected into a strategy
+    (``BaseStrategy`` sets ``self.exit_policy = exit_policy_for(self.name)``; the
+    CLI's ``--exit-preset`` can override it).
 
 Import-graph note: this module may import ``exits`` (and therefore ``core``)
 but must NEVER import strategy classes — per-strategy assignment is keyed by the
@@ -35,7 +36,13 @@ from .exits import (
 
 
 # ── Strategy parameters ──────────────────────────────────────────────────────
-
+# This is where you tune how signals are generated (indicator periods, multipliers, structural levels).
+#
+# NOTE: trade-level parameters (costs, sizing, direction, leverage, risk overlays)
+# intentionally do NOT live here — they describe *how you trade* any signal,
+# not how signals are generated. They live on TradingConfig in
+# engine/trade_configurator.py, are seeded onto PositionState by the runner,
+# and applied at exit (cost) / entry (direction + daily-loss gates).
 
 @dataclass(frozen=True)
 class StrategyConfig:
@@ -57,9 +64,11 @@ class StrategyConfig:
     supertrend_period: int = 10
     supertrend_mult: float = 3.0
 
-    # ATR / risk
+    # ATR
     atr_period: int = 14
-    atr_trail_mult: float = 2.0
+    # NOTE: the trend/EMA/swing trailing-stop *distance* is not a field here — it
+    # lives in the exit catalog below (EXIT_PRESETS["chandelier_2atr"] =
+    # ChandelierStop(2.0)), the single source of truth for that stop.
 
     # Exhaustion-reversal strategy
     exhaustion_push_min_len: int = 2        # min |length| of the push-leg streak
@@ -125,31 +134,25 @@ class StrategyConfig:
     swing_zz_min_bars_between: int = 3
     swing_zz_vol_lookback: int = 50
     swing_zz_min_score: float = 0.0
-    swing_zz_use_stop: bool = True
-    swing_zz_stop_atr_mult: float = 3.0
+    swing_zz_use_stop: bool = True  # toggle only; trail distance = PER_STRATEGY_EXIT preset (chandelier_3atr)
 
     # ML swing-pivot classifier strategy.
     # ml_model_path is resolved relative to the repo root if not absolute.
     ml_model_path: str = "ml_models/swing_zz_ml.joblib"
     ml_p_threshold: float = 0.55
-    ml_use_stop: bool = True
-    ml_stop_atr_mult: float = 3.0
-
-    # NOTE: trade-level parameters (costs, sizing, direction, leverage, risk
-    # overlays) intentionally do NOT live here — they describe *how you trade*
-    # any signal, not how signals are generated. They live on TradingConfig in
-    # engine/trade_configurator.py, are seeded onto PositionState by the runner,
-    # and applied at exit (cost) / entry (direction + daily-loss gates).
+    ml_use_stop: bool = True  # toggle only; trail distance = PER_STRATEGY_EXIT preset (chandelier_3atr)
 
 
 # ── Exit / take-profit policy catalog ──────────────────────────────────────────
-# Named presets built from engine.exits mechanisms. Each value is a factory so a
-# fresh policy is created per use. List the stop before any target for stop-first
-# precedence on ambiguous bars.
+# This is where SL/TP behaviour is defined and assigned.
 #
-# NOTE: not yet wired into the strategies — that's the per-strategy conversion
-# phase. Defined here now so stop/TP selection and strategy params share one file.
+# Wired into the strategies via exit_policy_for() below: BaseStrategy injects the
+# resolved policy as self.exit_policy (overridable by the CLI's --exit-preset).
 
+# Named presets that build a stop+target from the mechanisms in engine/exits.py
+# Each value is a preset so a fresh policy is created per use.
+# Add a new SL/TP combo here.
+# List the stop before any target for stop-first precedence on ambiguous bars.
 EXIT_PRESETS: dict[str, "callable[[], ExitPolicy]"] = {
     "chandelier_2atr": lambda: ChandelierStop(2.0),    # matches today's trend-strategy trail
     "chandelier_3atr": lambda: ChandelierStop(3.0),
@@ -163,22 +166,24 @@ EXIT_PRESETS: dict[str, "callable[[], ExitPolicy]"] = {
     "vwap_mean":       lambda: CloseCrossTarget(),
 }
 
-# Global default exit (covers the trend/EMA/swing group), with per-strategy
-# overrides (string-keyed by the strategy's `name`, never by importing the class
-# — keeps the import graph acyclic).
+# Global default exit: the fallback policy for the trend/EMA/swing group.
 DEFAULT_EXIT = "chandelier_2atr"
+
+# Per-strategy overrides
+# (keyed by the strategy's name string, never by importing the class — keeps the import graph acyclic)
+# Change which exit a strategy uses here.
 PER_STRATEGY_EXIT: dict[str, str] = {
     "order_block": "structural",
     "order_block_inv": "structural",
     "exhaustion_reversal": "structural",
     "impulse_flag": "structural",
     "vwap_bands": "vwap_mean",
-    "swing_zigzag": "chandelier_3atr",      # swing_zz_stop_atr_mult default
-    "swing_zigzag_ml": "chandelier_3atr",   # ml_stop_atr_mult default
+    "swing_zigzag": "chandelier_3atr",      # 3·ATR trail (single source of truth for the distance)
+    "swing_zigzag_ml": "chandelier_3atr",   # 3·ATR trail (single source of truth for the distance)
 }
 
-
+# resolves the override (else default) into an ExitPolicy
 def exit_policy_for(strategy_name: str) -> ExitPolicy:
     """Build the exit policy assigned to a strategy (its override, else the
-    global default). Not yet called by the runner — see the rollout plan."""
+    global default). Called by BaseStrategy to seed self.exit_policy."""
     return EXIT_PRESETS[PER_STRATEGY_EXIT.get(strategy_name, DEFAULT_EXIT)]()

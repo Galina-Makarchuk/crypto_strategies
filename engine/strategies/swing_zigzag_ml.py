@@ -17,8 +17,12 @@ The model artifact is a dict produced by the training notebook
         "features": tuple of feature column names (must match build_feature_frame),
     }
 
-If the model file is missing, the strategy raises immediately at
-construction — there is no silent fallback.
+If the model file is missing, the strategy raises immediately at construction
+WHEN ``require_model=True`` (the default) — there is no silent fallback. With
+``require_model=False`` the model is never loaded; ``prepare()`` instead runs on
+pre-injected ``ml_p_long`` / ``ml_p_short`` / ``ml_valid`` columns (used to
+backtest out-of-sample probabilities from the research notebooks), raising a
+``ValueError`` only if those columns are absent.
 """
 
 from __future__ import annotations
@@ -38,6 +42,7 @@ from ..ml.features import (
 from ..ml.labels import LABEL_HOLD, LABEL_LONG, LABEL_SHORT
 from ..ml.order_flow import OFI_FEATURE_COLUMNS
 from ..core import Direction, ExitReason, PositionState
+from ..exits import ExitPolicy
 from ..strategy_configurator import StrategyConfig
 from ..swings import wilder_atr
 from .base import BaseStrategy
@@ -59,9 +64,28 @@ def _resolve_model_path(path_str: str) -> Path:
 class MLSwingZigZagStrategy(BaseStrategy):
     name = "swing_zigzag_ml"
 
-    def __init__(self, config: StrategyConfig):
-        super().__init__(config)
+    def __init__(
+        self,
+        config: StrategyConfig,
+        exit_policy: ExitPolicy | None = None,
+        *,
+        require_model: bool = True,
+    ):
+        super().__init__(config, exit_policy)
         self._model_path = _resolve_model_path(config.ml_model_path)
+        self._model = None
+        self._classes: list[int] = []
+        self._trained_features: tuple[str, ...] = ()
+        self._schema: str | None = None
+        self._idx_long = self._idx_short = -1
+        # require_model=False builds the strategy for backtesting on externally
+        # supplied probabilities (e.g. cross-validated out-of-sample probs from a
+        # research notebook): prepare() then passes through pre-injected
+        # ml_p_long / ml_p_short / ml_valid columns instead of running inference.
+        if require_model:
+            self._load_model()
+
+    def _load_model(self) -> None:
         if not self._model_path.exists():
             raise FileNotFoundError(
                 f"ML model not found at {self._model_path}. "
@@ -69,8 +93,8 @@ class MLSwingZigZagStrategy(BaseStrategy):
             )
         bundle = joblib.load(self._model_path)
         self._model = bundle["model"]
-        self._classes: list[int] = list(bundle["classes"])
-        self._trained_features: tuple[str, ...] = tuple(bundle.get("features", FEATURE_COLUMNS))
+        self._classes = list(bundle["classes"])
+        self._trained_features = tuple(bundle.get("features", FEATURE_COLUMNS))
         if self._trained_features == tuple(FEATURE_COLUMNS):
             self._schema = "t1"
         elif self._trained_features == tuple(FEATURE_COLUMNS_T3):
@@ -86,6 +110,23 @@ class MLSwingZigZagStrategy(BaseStrategy):
 
     def prepare(self, df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy()
+
+        # Pre-injected probabilities (e.g. out-of-sample probs supplied by a
+        # research notebook) bypass model inference: on_bar reads ml_p_long /
+        # ml_p_short / ml_valid the same way whether the model or a notebook
+        # produced them. ml_atr (the trailing-stop input) is computed if absent.
+        if {"ml_p_long", "ml_p_short", "ml_valid"}.issubset(df.columns):
+            if "ml_atr" not in df.columns:
+                df["ml_atr"] = wilder_atr(df, 14)
+            return df
+
+        if self._model is None:
+            raise ValueError(
+                "MLSwingZigZagStrategy was built with require_model=False, so "
+                "prepare() needs pre-injected ml_p_long / ml_p_short / ml_valid "
+                "columns (supply out-of-sample probabilities, or rebuild with "
+                "require_model=True to run the model)."
+            )
 
         if self._schema == "t3":
             missing = [c for c in OFI_FEATURE_COLUMNS if c not in df.columns]
