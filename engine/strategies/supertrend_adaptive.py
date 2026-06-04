@@ -29,6 +29,12 @@ class AdaptiveSuperTrendStrategy(BaseStrategy):
     def __init__(self, config: StrategyConfig, adx_threshold: float = 25.0):
         super().__init__(config)
         self.adx_threshold = adx_threshold
+        # Regime (trending vs ranging) captured at entry. The exit-flip side is
+        # decided by THIS, not the current bar's regime, so a mid-trade ADX
+        # crossing can't flip a position's exit condition. None when flat (or a
+        # position restored in live before this instance opened it → falls back
+        # to the current regime).
+        self._entry_trending: bool | None = None
 
     def prepare(self, df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy()
@@ -71,36 +77,39 @@ class AdaptiveSuperTrendStrategy(BaseStrategy):
         # ── Exit logic ─────────────────────────────────────────────────────
         if state.current_trade is not None:
             trade = state.current_trade
-            # Signal-flip exit stays in-strategy (regime-dependent), checked first.
+            # Signal-flip exit stays in-strategy. The flip side is decided by the
+            # regime captured AT ENTRY (not this bar's), so a trend-follow long
+            # keeps exiting on flip_down even after ADX falls into 'ranging'.
+            entry_trending = (
+                self._entry_trending if self._entry_trending is not None else trending
+            )
             if trade.direction == Direction.LONG:
-                exit_flip = flip_down if trending else flip_up
+                exit_flip = flip_down if entry_trending else flip_up
             else:
-                exit_flip = flip_up if trending else flip_down
+                exit_flip = flip_up if entry_trending else flip_down
             if exit_flip:
                 state.exit(ts, close, ExitReason.SIGNAL_FLIP)
+                self._entry_trending = None
                 return
             decision = self.exit_policy.evaluate(self._exit_ctx(i, df, trade, atr_val))
             if decision is not None:
                 state.exit(ts, decision.price, decision.reason)
+                self._entry_trending = None
                 return
 
         # ── Entry logic ────────────────────────────────────────────────────
         if state.current_trade is not None or not has_flip:
             return
 
+        # Regime fixes both the entry side and (above) the exit-flip side.
+        #   trending → follow: flip_up→LONG,  flip_down→SHORT
+        #   ranging  → fade:   flip_up→SHORT, flip_down→LONG
         if trending:
-            # Normal: follow the trend
-            if flip_up:
-                state.enter(Direction.LONG, ts, close,
-                            stop_price=self._entry_stop(Direction.LONG, close, atr_val))
-            elif flip_down:
-                state.enter(Direction.SHORT, ts, close,
-                            stop_price=self._entry_stop(Direction.SHORT, close, atr_val))
+            direction = Direction.LONG if flip_up else Direction.SHORT
         else:
-            # Inverse: fade the trend
-            if flip_up:
-                state.enter(Direction.SHORT, ts, close,
-                            stop_price=self._entry_stop(Direction.SHORT, close, atr_val))
-            elif flip_down:
-                state.enter(Direction.LONG, ts, close,
-                            stop_price=self._entry_stop(Direction.LONG, close, atr_val))
+            direction = Direction.SHORT if flip_up else Direction.LONG
+        if state.enter(
+            direction, ts, close,
+            stop_price=self._entry_stop(direction, close, atr_val),
+        ) is not None:
+            self._entry_trending = trending

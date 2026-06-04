@@ -97,7 +97,12 @@ def rsi(series: pd.Series, period: int = 14) -> pd.Series:
     gain = delta.where(delta > 0, 0.0).ewm(alpha=1 / period, adjust=False).mean()
     loss = (-delta.where(delta < 0, 0.0)).ewm(alpha=1 / period, adjust=False).mean()
     rs = gain / loss.replace(0, np.nan)
-    return (100 - 100 / (1 + rs)).fillna(100.0)
+    out = 100 - 100 / (1 + rs)
+    # loss == 0 makes rs NaN. That's genuine overbought (RSI 100) only when there
+    # were gains; a truly flat window (no gains AND no losses) carries no
+    # information and is neutral (50), not maximally overbought.
+    out = out.where(~((loss == 0) & (gain > 0)), 100.0)
+    return out.fillna(50.0)
 
 
 # ── SuperTrend ─────────────────────────────────────────────────────────────────
@@ -173,6 +178,12 @@ def adx(df: pd.DataFrame, period: int = 14) -> pd.Series:
     low = df["low"].to_numpy(dtype=float)
     close = df["close"].to_numpy(dtype=float)
     n = len(df)
+
+    # ADX needs 2*period bars of warmup; with n <= period the Wilder seed write
+    # (smoothed_tr[period] = …) would index past the array. Such a short frame is
+    # entirely warmup, so return all-NaN instead of raising IndexError.
+    if n <= period:
+        return pd.Series(np.nan, index=df.index, name="adx")
 
     plus_dm = np.zeros(n)
     minus_dm = np.zeros(n)

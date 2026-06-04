@@ -68,7 +68,15 @@ class TestRSI:
 
         series = pd.Series([100.0] * 50)
         result = rsi(series, period=14)
-        # Constant price → RSI should be ~100 (no losses)
+        # Constant price → no gains AND no losses → neutral 50, not overbought.
+        # (RSI 100 is reserved for genuine "all gains, no losses" runs.)
+        assert result.iloc[-1] == pytest.approx(50.0)
+
+    def test_rsi_monotonic_gains_is_overbought(self):
+        from engine.indicators import rsi
+
+        # A pure uptrend (gains, no losses) is the real RSI-100 case.
+        result = rsi(pd.Series(np.arange(1.0, 51.0)), period=14)
         assert result.iloc[-1] == pytest.approx(100.0)
 
 
@@ -1097,6 +1105,60 @@ class TestExitPolicies:
         assert CompositeExit(stop, RrTarget(2.0)).initial_stop(
             self._ctx(Direction.LONG, ref_stop=98.0)
         ) == 98.0
+
+    def test_zero_or_nonfinite_level_is_not_a_real_exit(self):
+        # Regression for the live 0.0-exit bug: order_block / exhaustion /
+        # impulse_flag re-zero their stashed ref_stop/ref_target each prepare();
+        # while a position is open in live mode that leaves the level at 0.0.
+        # 0.0 (and NaN/negative) must be treated as "no level", NOT a real price —
+        # otherwise a long is force-closed at price 0.0 (high >= 0 always true),
+        # a phantom ~-100% trade booked as a take-profit.
+        from engine.exits import (
+            StructuralTarget, StructuralStop, CloseCrossTarget, CompositeExit,
+        )
+        from engine.core import Direction
+
+        assert StructuralTarget().evaluate(
+            self._ctx(Direction.LONG, ref_target=0.0, high=120.0)) is None
+        assert StructuralStop().evaluate(
+            self._ctx(Direction.SHORT, ref_stop=0.0, high=120.0)) is None
+        assert CloseCrossTarget().evaluate(
+            self._ctx(Direction.LONG, ref_target=0.0, close=120.0)) is None
+        assert StructuralTarget().evaluate(
+            self._ctx(Direction.LONG, ref_target=float("nan"), high=120.0)) is None
+        # The 'structural' preset (stop-first composite) with both levels zeroed.
+        comp = CompositeExit(StructuralStop(), StructuralTarget())
+        assert comp.evaluate(self._ctx(Direction.LONG, ref_target=0.0, high=120.0)) is None
+        # Sanity: a real positive level still fires.
+        d = StructuralTarget().evaluate(
+            self._ctx(Direction.LONG, ref_target=110.0, high=120.0))
+        assert d is not None and d.price == pytest.approx(110.0)
+
+
+class TestADX:
+    def test_adx_short_frame_returns_nan_not_crash(self):
+        # Regression: n <= period used to IndexError on the Wilder seed write.
+        from engine.indicators import adx
+
+        for n in (1, 5, 14):
+            df = pd.DataFrame({
+                "high": np.arange(1, n + 1) + 0.5,
+                "low": np.arange(1, n + 1, dtype=float),
+                "close": np.arange(1, n + 1) + 0.2,
+            })
+            out = adx(df, period=14)
+            assert len(out) == n and out.isna().all()
+
+    def test_adx_normal_frame_is_finite(self):
+        from engine.indicators import adx
+
+        n = 100
+        df = pd.DataFrame({
+            "high": np.arange(1, n + 1) + 0.5,
+            "low": np.arange(1, n + 1, dtype=float),
+            "close": np.arange(1, n + 1) + 0.2,
+        })
+        assert np.isfinite(adx(df, period=14).iloc[-1])
 
 
 if __name__ == "__main__":

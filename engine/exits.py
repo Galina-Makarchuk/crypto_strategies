@@ -22,11 +22,25 @@ list the stop before the target and the stop wins. Conservative by construction.
 
 from __future__ import annotations
 
+import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Optional
 
 from .core import Direction, ExitReason
+
+
+def _usable_level(level: Optional[float]) -> bool:
+    """A price level is usable only if it's a real, positive number.
+
+    ``None`` means "no level". But ``0.0`` (and NaN / negatives) must be treated
+    the same way, **not** as a real price: a strategy that stashes its stop/target
+    on instance state and re-zeroes it each ``prepare()`` (order_block, exhaustion,
+    impulse_flag) leaves ``ref_stop``/``ref_target`` at ``0.0`` while a position is
+    open in live mode. Without this guard, ``low <= 0`` / ``high >= 0`` is trivially
+    true and the position is force-closed at price 0.0 — a phantom ~-100% trade.
+    Real price levels are always > 0, so this never rejects a legitimate level."""
+    return level is not None and math.isfinite(level) and level > 0.0
 
 
 @dataclass(frozen=True)
@@ -108,7 +122,7 @@ class _FixedStop(ExitPolicy):
 
     def evaluate(self, ctx: ExitContext) -> Optional[ExitDecision]:
         lvl = ctx.stop_price
-        if lvl is None:
+        if not _usable_level(lvl):
             return None
         if ctx.direction is Direction.LONG:
             if ctx.low <= lvl:
@@ -149,11 +163,11 @@ class StructuralStop(ExitPolicy):
     ``stop_price``. Intrabar trigger, fills at the level."""
 
     def initial_stop(self, ctx: ExitContext) -> Optional[float]:
-        return ctx.ref_stop
+        return ctx.ref_stop if _usable_level(ctx.ref_stop) else None
 
     def evaluate(self, ctx: ExitContext) -> Optional[ExitDecision]:
-        lvl = ctx.ref_stop if ctx.ref_stop is not None else ctx.stop_price
-        if lvl is None:
+        lvl = ctx.ref_stop if _usable_level(ctx.ref_stop) else ctx.stop_price
+        if not _usable_level(lvl):
             return None
         if ctx.direction is Direction.LONG:
             if ctx.low <= lvl:
@@ -177,7 +191,7 @@ class _Target(ExitPolicy):
 
     def evaluate(self, ctx: ExitContext) -> Optional[ExitDecision]:
         tgt = self.target(ctx)
-        if tgt is None:
+        if not _usable_level(tgt):
             return None
         if ctx.direction is Direction.LONG:
             if ctx.high >= tgt:
@@ -216,7 +230,7 @@ class CloseCrossTarget(ExitPolicy):
     unlike the intrabar, fill-at-level :class:`StructuralTarget`."""
 
     def evaluate(self, ctx: ExitContext) -> Optional[ExitDecision]:
-        if ctx.ref_target is None:
+        if not _usable_level(ctx.ref_target):
             return None
         if ctx.direction is Direction.LONG and ctx.close >= ctx.ref_target:
             return ExitDecision(ctx.close, ExitReason.TAKE_PROFIT)
@@ -233,7 +247,7 @@ class RrTarget(_Target):
         self.rr = rr
 
     def target(self, ctx: ExitContext) -> Optional[float]:
-        if ctx.stop_price is None:
+        if not _usable_level(ctx.stop_price):
             return None
         risk = abs(ctx.entry_price - ctx.stop_price)
         if risk <= 0:

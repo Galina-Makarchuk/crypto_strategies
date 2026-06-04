@@ -99,7 +99,6 @@ def build_chart(
 
     # ── Optional indicator overlays ────────────────────────────────────────
     if "supertrend" in df.columns:
-        colors = df["trend_dir"].map({1: "#22c55e", -1: "#ef4444"}).fillna("#888")
         fig.add_trace(
             go.Scatter(
                 x=df.index,

@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS position_state (
     entry_ts    TEXT,
     entry_price REAL,
     peak_price  REAL,
+    stop_price  REAL,
     trade_id    TEXT,
     trade_counter INTEGER NOT NULL DEFAULT 0,
     updated_at  TEXT NOT NULL
@@ -58,11 +59,16 @@ class StateStore:
         self._conn = sqlite3.connect(self._db_path)
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.executescript(_SCHEMA)
-        # Backward-compat: add exit_reason to pre-existing trade_history tables.
-        try:
-            self._conn.execute("ALTER TABLE trade_history ADD COLUMN exit_reason TEXT")
-        except sqlite3.OperationalError:
-            pass  # column already exists
+        # Backward-compat: add columns to pre-existing tables created by older
+        # schemas (CREATE TABLE IF NOT EXISTS won't alter an existing table).
+        for table, column in (
+            ("trade_history", "exit_reason TEXT"),
+            ("position_state", "stop_price REAL"),
+        ):
+            try:
+                self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {column}")
+            except sqlite3.OperationalError:
+                pass  # column already exists
         self._conn.commit()
         logger.info("State store initialised: %s", self._db_path)
 
@@ -78,8 +84,8 @@ class StateStore:
         self._conn.execute(
             """
             INSERT OR REPLACE INTO position_state
-                (id, status, direction, entry_ts, entry_price, peak_price, trade_id, trade_counter, updated_at)
-            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
+                (id, status, direction, entry_ts, entry_price, peak_price, stop_price, trade_id, trade_counter, updated_at)
+            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 state.status.name.lower(),
@@ -87,6 +93,7 @@ class StateStore:
                 trade.entry_ts.isoformat() if trade and trade.entry_ts else None,
                 trade.entry_price if trade else None,
                 trade.peak_price if trade else None,
+                trade.stop_price if trade else None,
                 trade.trade_id if trade else None,
                 state._trade_counter,
                 now,
@@ -96,14 +103,14 @@ class StateStore:
 
     def load_state(self) -> PositionState:
         row = self._conn.execute(
-            "SELECT status, direction, entry_ts, entry_price, peak_price, trade_id, trade_counter FROM position_state WHERE id = 1"
+            "SELECT status, direction, entry_ts, entry_price, peak_price, stop_price, trade_id, trade_counter FROM position_state WHERE id = 1"
         ).fetchone()
 
         state = PositionState()
         if row is None:
             return state
 
-        status_str, direction_str, entry_ts_str, entry_price, peak_price, trade_id, counter = row
+        status_str, direction_str, entry_ts_str, entry_price, peak_price, stop_price, trade_id, counter = row
         state._trade_counter = counter or 0
 
         if status_str == "open" and direction_str and entry_ts_str:
@@ -114,6 +121,7 @@ class StateStore:
                 entry_ts=datetime.fromisoformat(entry_ts_str),
                 entry_price=entry_price or 0.0,
                 peak_price=peak_price or 0.0,
+                stop_price=stop_price,
             )
             logger.info(
                 "Restored open %s position from %.2f (peak %.2f)",

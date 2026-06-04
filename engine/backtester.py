@@ -263,6 +263,12 @@ class Backtester:
             fallbacks += fell_back
             t.pnl_currency = t.notional * (t.pnl_bps / 10_000.0)
             equity += t.pnl_currency
+            # Floor a blown account at zero: a loss can't take equity negative
+            # (you can't owe more than the account). Without this, a sub-zero
+            # equity makes the next trade's notional negative, which flips the
+            # sign of subsequent P&L and corrupts the whole curve.
+            if equity < 0.0:
+                equity = 0.0
             t.equity_after = equity
             peak = max(peak, equity)
             if peak > 0:

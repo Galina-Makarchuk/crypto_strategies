@@ -143,6 +143,16 @@ class LiveEngine:
             category=self.category,
         )
 
+        # Bybit returns the still-forming current candle as the most recent row.
+        # Acting on it repaints — its high/low/close keep changing intra-bar, so
+        # an entry/exit can fire on a wick the bar later erases. Drop it and
+        # evaluate only the last *closed* bar, the same data a backtest sees.
+        if len(df) > 0:
+            df = df.iloc[:-1]
+        if len(df) == 0:
+            logger.warning("No closed candles this tick (only a forming bar) — skipping.")
+            return
+
         # Prepare indicators
         prepared = self.strategy.prepare(df)
 
@@ -213,10 +223,13 @@ class LiveEngine:
         if max_hold is None or trade is None or trade.entry_ts is None:
             return
         minutes = _INTERVAL_MINUTES[self.interval]
-        bars_held = (bar_ts - trade.entry_ts).total_seconds() / (minutes * 60)
+        # Integer bar count between entry and this (closed) bar — both timestamps
+        # are bar-open times aligned to the interval, so round() is exact and
+        # mirrors the backtester's `(i - open_bar) >= max_hold`.
+        bars_held = round((bar_ts - trade.entry_ts).total_seconds() / (minutes * 60))
         if bars_held >= max_hold:
             self._state.exit(bar_ts, close, ExitReason.TIME_STOP)
-            logger.info("Max-holding time-stop after ~%d bars.", int(bars_held))
+            logger.info("Max-holding time-stop after %d bars.", bars_held)
 
     def _cleanup(self) -> None:
         logger.info("Cleaning up …")
