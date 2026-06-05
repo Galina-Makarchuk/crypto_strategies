@@ -30,7 +30,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from ..swings import detect_swings
+from ..swing_detector import detect_swings
 
 LABEL_HOLD: int = 0
 LABEL_LONG: int = 1

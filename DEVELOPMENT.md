@@ -13,7 +13,7 @@ python -m engine --strategy supertrend --interval 15 --candles 800
 # EMA crossover backtest
 python -m engine --strategy ema --interval 60 --candles 1000 --save ema_chart.html
 
-# Live mode with state persistence
+# Live mode with persisted live records
 python -m engine --strategy supertrend --mode live --interval 5 --poll 30
 
 # Structured JSON logging (for log shippers)
@@ -29,7 +29,7 @@ engine/
 ├── fetcher.py                   # Bybit v5 API client with retry + rate limiting
 ├── backtester.py                # Event-driven bar-by-bar backtester
 ├── visualization.py             # Plotly chart builder (batched traces)
-├── persistence.py               # SQLite state store for live mode
+├── live_records.py              # SQLite-backed live records (position + trade history)
 ├── live.py                      # Live trading loop with circuit breaker + SIGTERM
 ├── cli.py                       # Argument parsing + dispatch
 ├── strategies/
@@ -70,7 +70,7 @@ Round-trip fees + slippage deducted from every trade's P&L. Default: 4 bps taker
 fee + 2 bps slippage per side = 12 bps round-trip.
 
 ### Live mode resilience
-- SQLite persistence: position state survives process restarts
+- SQLite live records: position + trade history survive process restarts
 - Circuit breaker: stops after 10 consecutive fetch failures
 - Exponential backoff on transient errors
 - SIGTERM handler for graceful Docker/systemd shutdown

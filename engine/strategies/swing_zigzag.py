@@ -22,7 +22,7 @@ import pandas as pd
 
 from ..core import Direction, ExitReason, PositionState
 from ..strategy_configurator import StrategyConfig
-from ..swings import detect_swings, wilder_atr
+from ..swing_detector import detect_swings, wilder_atr
 from .base import BaseStrategy
 
 

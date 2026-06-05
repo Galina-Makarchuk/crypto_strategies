@@ -1,9 +1,10 @@
-"""Bybit kline fetcher with retry, rate-limiting, and incremental updates.
+"""Bybit kline fetcher with retry and rate-limiting.
 
 Production considerations:
 - Exponential backoff on 429/5xx via urllib3 Retry
 - Token-bucket rate limiter (configurable)
-- Incremental tail-append for live mode (avoid re-fetching full window)
+- Windowed re-fetch for live mode (LiveEngine re-fetches a full window each
+  tick rather than tail-appending)
 - Timezone-aware UTC timestamps
 - Typed return value (always a clean DataFrame)
 """
@@ -19,7 +20,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from .core import VALID_INTERVALS, validate_interval
+from .core import validate_interval
 
 logger = logging.getLogger(__name__)
 

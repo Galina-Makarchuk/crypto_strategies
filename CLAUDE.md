@@ -23,7 +23,7 @@ python -m engine --strategy supertrend --interval 15 \
   --fee-bps 5.5 --slippage-bps 1.5 --leverage 2 --direction long \
   --initial-equity 25000 --position-size-bps 5000 --max-holding-bars 48 --max-daily-loss-bps 300
 
-# Live mode (SQLite state persistence, poll loop)
+# Live mode (SQLite-persisted live records, poll loop)
 python -m engine --strategy supertrend --mode live --interval 5 --poll 30
 
 # Structured JSON logs (for log shippers)
@@ -77,7 +77,7 @@ Each strategy is **assigned** a policy in [strategy_configurator.py](engine/stra
 
 ### Live mode adds resilience, not new semantics
 
-[LiveEngine](engine/live.py#L35) re-fetches a window of candles each tick, runs `prepare()` fresh, and calls `on_bar` on the last bar. Position state is persisted to SQLite via [StateStore](engine/persistence.py#L47) (WAL mode) so a restart recovers open positions. A circuit breaker halts the loop after 10 consecutive fetch failures; SIGTERM/SIGINT trigger graceful shutdown. Signals are kept to a rolling window of 500.
+[LiveEngine](engine/live.py#L35) re-fetches a window of candles each tick, runs `prepare()` fresh, and calls `on_bar` on the last bar. Position state is persisted to SQLite via [LiveRecords](engine/live_records.py#L53) (WAL mode) so a restart recovers open positions. A circuit breaker halts the loop after 10 consecutive fetch failures; SIGTERM/SIGINT trigger graceful shutdown. Signals are kept to a rolling window of 500.
 
 ### Fetcher contract
 

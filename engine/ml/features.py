@@ -23,7 +23,7 @@ import numpy as np
 import pandas as pd
 
 from ..indicators import rsi
-from ..swings import wilder_atr
+from ..swing_detector import wilder_atr
 from .order_flow import OFI_FEATURE_COLUMNS, merge_orderflow_features
 
 # ── Feature configuration ─────────────────────────────────────────────────────

@@ -52,7 +52,7 @@ def _engine(tmp_path, category="linear"):
         interval="15",
         category=category,
         num_candles=5,
-        db_path=str(tmp_path / "state.db"),
+        db_path=str(tmp_path / "live_records.db"),
         chart_path=str(tmp_path / "chart.html"),
     )
 

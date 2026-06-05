@@ -1,7 +1,11 @@
-"""SQLite persistence for live position state.
+"""SQLite-backed live records: the open position and trade history.
 
-Stores position state and trade history so the bot can recover
+Continuously saves the position + every completed trade to SQLite, 
+and reloads them on startup.
+
+Stores position state and trade history, so the bot can recover
 from crashes without losing track of open positions.
+
 """
 
 from __future__ import annotations
@@ -46,8 +50,8 @@ CREATE TABLE IF NOT EXISTS trade_history (
 """
 
 
-class StateStore:
-    """Persist PositionState to SQLite."""
+class LiveRecords:
+    """Persist the live position and trade history to SQLite."""
 
     def __init__(self, db_path: str | Path = "trading_state.db"):
         self._db_path = str(db_path)
@@ -70,7 +74,7 @@ class StateStore:
             except sqlite3.OperationalError:
                 pass  # column already exists
         self._conn.commit()
-        logger.info("State store initialised: %s", self._db_path)
+        logger.info("Live records store initialised: %s", self._db_path)
 
     def close(self) -> None:
         self._conn.close()

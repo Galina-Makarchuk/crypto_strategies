@@ -86,7 +86,8 @@ class BaseStrategy(ABC):
         Contract:
           - You may read df.iloc[0 .. i] (inclusive).
           - You MUST NOT read df.iloc[i+1 ..].
-          - If state.status is OPEN, you MUST call state.update_peak() first
-            (the backtester does this, but the strategy can also do it).
+          - If state.status is OPEN, you MUST call state.update_peak(high, low)
+            before checking exits — the runner does not do this for you; the
+            trailing stop tracks Trade.peak_price, not the previous bar's close.
         """
         ...

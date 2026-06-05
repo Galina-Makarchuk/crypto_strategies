@@ -3,7 +3,7 @@
 Production features:
 - Graceful shutdown on SIGTERM / SIGINT
 - Circuit breaker: stops after N consecutive fetch failures
-- State persistence: survives restart without losing position
+- Crash recovery: position + trade history persist across restarts
 - Incremental candle update (full refetch with dedup for simplicity & safety)
 - Writes chart to a single file (no browser-tab spam)
 - Bounded signal list (rolling window)
@@ -22,7 +22,7 @@ import pandas as pd
 
 from .fetcher import BybitFetcher
 from .core import ExitReason, PositionState, validate_category, validate_interval
-from .persistence import StateStore
+from .live_records import LiveRecords
 from .strategies.base import BaseStrategy
 from .trade_configurator import TradingConfig, warn_if_inverse_gated
 from .visualization import build_chart
@@ -68,7 +68,7 @@ class LiveEngine:
         self.trading_config = trading_config or TradingConfig()
 
         self._fetcher = BybitFetcher()
-        self._store = StateStore(db_path)
+        self._store = LiveRecords(db_path)
         self._state: PositionState = self._store.load_state()
         self._seed_state_policy(self._state)
         self._running = True

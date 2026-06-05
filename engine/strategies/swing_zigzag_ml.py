@@ -44,7 +44,7 @@ from ..ml.order_flow import OFI_FEATURE_COLUMNS
 from ..core import Direction, ExitReason, PositionState
 from ..exits import ExitPolicy
 from ..strategy_configurator import StrategyConfig
-from ..swings import wilder_atr
+from ..swing_detector import wilder_atr
 from .base import BaseStrategy
 
 

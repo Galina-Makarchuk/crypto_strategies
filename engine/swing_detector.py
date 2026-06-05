@@ -20,7 +20,7 @@ Key properties vs strict N-bar pivots:
 
 ATR convention here is Wilder's EWMA (``tr.ewm(alpha=1/period,
 adjust=False).mean()``), which differs from the SMA-based ``indicators.atr``.
-Keeping a local implementation preserves the original swings.py semantics so
+Keeping a local implementation preserves this module's original semantics so
 swing positions don't shift when the project's default ATR formula changes.
 
 Causality: at bar i the detector only reads bars 0..i, so the strategy that

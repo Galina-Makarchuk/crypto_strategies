@@ -454,7 +454,7 @@ class TestSwingsDetector:
         )
 
     def test_alternation_invariant(self):
-        from engine.swings import detect_swings
+        from engine.swing_detector import detect_swings
 
         df = self._sine_df()
         swings = detect_swings(df, min_prominence_atr=1.0, return_provisional=False)
@@ -463,7 +463,7 @@ class TestSwingsDetector:
             assert a.side != b.side
 
     def test_confirmation_lags_pivot(self):
-        from engine.swings import detect_swings
+        from engine.swing_detector import detect_swings
 
         df = self._sine_df()
         swings = detect_swings(df, min_prominence_atr=1.0, return_provisional=False)
@@ -471,7 +471,7 @@ class TestSwingsDetector:
         assert all(s.bars_to_confirm == s.confirmation_idx - s.idx for s in swings)
 
     def test_min_prominence_filters(self):
-        from engine.swings import detect_swings
+        from engine.swing_detector import detect_swings
 
         df = self._sine_df()
         loose = detect_swings(df, min_prominence_atr=0.5, return_provisional=False)

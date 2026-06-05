@@ -128,7 +128,7 @@ class StrategyConfig:
     vwap_entry_band: int = 4                 # 0-indexed; default = furthest band
 
     # ATR-prominence ZigZag swing strategy
-    # See engine/swings.py for the detector contract.
+    # See engine/swing_detector.py for the detector contract.
     swing_zz_atr_period: int = 14
     swing_zz_min_prominence_atr: float = 1.5
     swing_zz_min_bars_between: int = 3
