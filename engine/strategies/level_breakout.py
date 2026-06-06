@@ -1,4 +1,4 @@
-"""Swing-breakout strategy.
+"""Level-breakout strategy (N-bar fractal pivots → merged S/R → breakout).
 
 Key fixes vs. the original:
   1. No look-ahead: only uses levels confirmed ≥ `right` bars before current bar.
@@ -24,8 +24,8 @@ from ..strategy_configurator import StrategyConfig
 from .base import BaseStrategy
 
 
-class SwingBreakoutStrategy(BaseStrategy):
-    name = "swing"
+class LevelBreakoutStrategy(BaseStrategy):
+    name = "level_breakout"
 
     def __init__(self, config: StrategyConfig):
         super().__init__(config)

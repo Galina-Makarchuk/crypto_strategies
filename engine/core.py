@@ -34,8 +34,8 @@ class PositionStatus(Enum):
 
 
 class StrategyName(Enum):
-    SWING = "swing"
-    SWING_INV = "swing_inv"
+    LEVEL_BREAKOUT = "level_breakout"
+    LEVEL_BREAKOUT_INV = "level_breakout_inv"
     EMA_CROSS = "ema"
     EMA_CROSS_INV = "ema_inv"
     SUPERTREND = "supertrend"

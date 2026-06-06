@@ -49,7 +49,7 @@ from .exits import (
 class StrategyConfig:
     """Immutable strategy parameters.  All magic numbers live here."""
 
-    # Swing detection
+    # Level-breakout strategy: N-bar fractal-pivot S/R detection
     left: int = 5
     right: int = 5
     merge_tolerance: float = 0.0015  # 0.15 %

@@ -1,6 +1,6 @@
-"""Inverse Swing Breakout strategy.
+"""Inverse Level-Breakout strategy.
 
-Identical to SwingBreakoutStrategy but with flipped direction:
+Identical to LevelBreakoutStrategy but with flipped direction:
   - Price crosses above resistance → SHORT (fading the breakout)
   - Price crosses below support    → LONG  (buying the dip)
 
@@ -23,8 +23,8 @@ from ..strategy_configurator import StrategyConfig
 from .base import BaseStrategy
 
 
-class InverseSwingBreakoutStrategy(BaseStrategy):
-    name = "swing_inv"
+class InverseLevelBreakoutStrategy(BaseStrategy):
+    name = "level_breakout_inv"
 
     def __init__(self, config: StrategyConfig):
         super().__init__(config)

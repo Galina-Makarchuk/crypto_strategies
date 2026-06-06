@@ -33,8 +33,8 @@ GOLDEN = pathlib.Path(__file__).parent / "golden_trades.json"
 
 # Strategy name → class. ML strategies excluded (model/order-flow dependent).
 STRATEGIES = {
-    "swing": S.SwingBreakoutStrategy,
-    "swing_inv": S.InverseSwingBreakoutStrategy,
+    "level_breakout": S.LevelBreakoutStrategy,
+    "level_breakout_inv": S.InverseLevelBreakoutStrategy,
     "ema": S.EMACrossoverStrategy,
     "ema_inv": S.InverseEMACrossoverStrategy,
     "supertrend": S.SuperTrendStrategy,

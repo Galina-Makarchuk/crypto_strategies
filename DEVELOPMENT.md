@@ -40,8 +40,8 @@ engine/
 ├── cli.py                       # Argument parsing + strategy dispatch
 ├── strategies/                  # 16 strategies, each a BaseStrategy (prepare + on_bar)
 │   ├── base.py                  # Abstract base: prepare() + on_bar() + exit-policy injection
-│   ├── swing.py                 # N-bar fractal-pivot breakout
-│   ├── swing_inv.py             # Inverse swing: fade breakouts
+│   ├── level_breakout.py        # N-bar fractal-pivot S/R breakout
+│   ├── level_breakout_inv.py    # Inverse: fade the breakout
 │   ├── ema_cross.py             # EMA crossover + RSI filter
 │   ├── ema_cross_inv.py         # Inverse EMA crossover
 │   ├── ema_touch.py             # EMA touch-and-rejection (ported from the ema project)
@@ -117,7 +117,7 @@ pytest engine/tests/test_core.py -v
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--strategy` | `supertrend` | `swing`, `swing_inv`, `ema`, `ema_inv`, `ema_touch`, `supertrend`, `supertrend_inv`, `supertrend_adaptive`, `exhaustion_reversal`, `impulse_flag`, `order_block`, `order_block_inv`, `vwap_bands`, `swing_zigzag`, `swing_zigzag_ml`, `swing_bounce` |
+| `--strategy` | `supertrend` | `level_breakout`, `level_breakout_inv`, `ema`, `ema_inv`, `ema_touch`, `supertrend`, `supertrend_inv`, `supertrend_adaptive`, `exhaustion_reversal`, `impulse_flag`, `order_block`, `order_block_inv`, `vwap_bands`, `swing_zigzag`, `swing_zigzag_ml`, `swing_bounce` |
 | `--mode` | `historical` | `historical`, `live` |
 | `--symbol` | `BTCUSDT` | Any Bybit linear perp |
 | `--interval` | `15` | `1,3,5,15,30,60,120,240,360,720,D,W,M` |
