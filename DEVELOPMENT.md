@@ -24,25 +24,40 @@ python -m engine --strategy ema --log-json --log-level DEBUG
 
 ```
 engine/
-├── core.py                      # Typed enums, validation, Signal/Trade/PositionState
-├── indicators.py                # Pure functions: ATR, EMA, RSI, ADX, SuperTrend, swing detection
-├── fetcher.py                   # Bybit v5 API client with retry + rate limiting
-├── backtester.py                # Event-driven bar-by-bar backtester
-├── visualization.py             # Plotly chart builder (batched traces)
-├── live_records.py              # SQLite-backed live records (position + trade history)
+├── core.py                      # Typed enums, validation, Signal/Trade/PositionState state machine
+├── indicators.py                # Pure functions: ATR, EMA, RSI, ADX, SuperTrend, VWAP, swing/level pivots
+├── swing_detector.py            # ATR-prominence ZigZag swing detector (Swing records + tiers)
+├── level_detector.py            # Support/resistance/pullback level detector (absolute/percent/ATR tolerance)
+├── exits.py                     # Pluggable exit policies: stops + take-profits, CompositeExit (stop-first)
+├── strategy_configurator.py     # StrategyConfig (signal knobs) + exit-policy catalog (EXIT_PRESETS)
+├── trade_configurator.py        # TradingConfig: costs, sizing, leverage, direction gate, risk overlays
+├── data_configurator.py         # Single source of truth for market data: load_data() + parquet cache
+├── fetcher.py                   # Bybit v5 kline client with retry + rate limiting
+├── backtester.py                # Event-driven bar-by-bar backtester + additive equity layer
+├── visualization.py             # Plotly chart builder + level overlay (plot_levels)
+├── live_records.py              # SQLite-backed live records: open position + trade history
 ├── live.py                      # Live trading loop with circuit breaker + SIGTERM
-├── cli.py                       # Argument parsing + dispatch
-├── strategies/
-│   ├── base.py                  # Abstract base: prepare() + on_bar()
-│   ├── swing.py                 # Swing breakout (no look-ahead, cross detection)
-│   ├── swing_inv.py             # Inverse swing: fade breakouts / buy the dip
+├── cli.py                       # Argument parsing + strategy dispatch
+├── strategies/                  # 16 strategies, each a BaseStrategy (prepare + on_bar)
+│   ├── base.py                  # Abstract base: prepare() + on_bar() + exit-policy injection
+│   ├── swing.py                 # N-bar fractal-pivot breakout
+│   ├── swing_inv.py             # Inverse swing: fade breakouts
 │   ├── ema_cross.py             # EMA crossover + RSI filter
+│   ├── ema_cross_inv.py         # Inverse EMA crossover
+│   ├── ema_touch.py             # EMA touch-and-rejection (ported from the ema project)
 │   ├── supertrend.py            # SuperTrend with correct band ratcheting
-│   ├── supertrend_inv.py        # Inverse SuperTrend: fade trend flips
-│   ├── supertrend_adaptive.py   # ADX-regime-gated SuperTrend (trend vs range)
-│   └── exhaustion_reversal.py   # Push → stall → volume-backed reversal
-└── tests/
-    └── test_core.py             # 22 tests covering indicators, core types, strategies
+│   ├── supertrend_inv.py        # Inverse SuperTrend
+│   ├── supertrend_adaptive.py   # ADX-regime-gated SuperTrend
+│   ├── exhaustion_reversal.py   # Push → stall → volume-backed reversal
+│   ├── impulse_flag.py          # Impulse + flag-consolidation breakout
+│   ├── order_block.py           # Order-block retest
+│   ├── order_block_inv.py       # Inverse order block
+│   ├── vwap_bands.py            # VWAP stdev-band mean reversion
+│   ├── swing_zigzag.py          # ATR-prominence ZigZag — flip mode
+│   ├── swing_bounce.py          # ATR-prominence ZigZag — bounce mode (ported)
+│   └── swing_zigzag_ml.py       # ML swing-pivot classifier (imitation learning)
+├── ml/                          # ML pipeline for swing_zigzag_ml: features, labels, splits, order_flow
+└── tests/                       # pytest: test_core, test_golden, test_level_detector, test_live, test_ml, …
 ```
 
 ## Key Design Decisions
@@ -102,7 +117,7 @@ pytest engine/tests/test_core.py -v
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--strategy` | `supertrend` | `swing`, `swing_inv`, `ema`, `supertrend`, `supertrend_inv`, `supertrend_adaptive`, `exhaustion_reversal` |
+| `--strategy` | `supertrend` | `swing`, `swing_inv`, `ema`, `ema_inv`, `ema_touch`, `supertrend`, `supertrend_inv`, `supertrend_adaptive`, `exhaustion_reversal`, `impulse_flag`, `order_block`, `order_block_inv`, `vwap_bands`, `swing_zigzag`, `swing_zigzag_ml`, `swing_bounce` |
 | `--mode` | `historical` | `historical`, `live` |
 | `--symbol` | `BTCUSDT` | Any Bybit linear perp |
 | `--interval` | `15` | `1,3,5,15,30,60,120,240,360,720,D,W,M` |
