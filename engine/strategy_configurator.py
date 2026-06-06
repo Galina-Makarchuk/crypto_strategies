@@ -167,6 +167,12 @@ class StrategyConfig:
     swing_bounce_stop_atr_mult: float = 1.0             # entry stop = swing price ∓ mult·ATR (swing-anchored)
     swing_bounce_min_bars_between_trades: int = 0       # cooldown bars after an exit before re-entry
 
+    # Swing breakout strategy (continuation through confirmed swing pivots; ported
+    # from the ema project's swing_strategy.py breakout mode). Reuses swing_zz_* above.
+    swing_breakout_buffer_atr: float = 0.0              # close must clear the swing level by this many ATR
+    swing_breakout_stop_atr_mult: float = 1.0           # entry stop = swing level ∓ mult·ATR (swing-anchored)
+    swing_breakout_min_bars_between_trades: int = 0     # cooldown bars after an exit before re-entry
+
 
 # ── Exit / take-profit policy catalog ──────────────────────────────────────────
 # This is where SL/TP behaviour is defined and assigned.
@@ -222,6 +228,7 @@ PER_STRATEGY_EXIT: dict[str, str] = {
     "swing_ml": "chandelier_3atr",          # 3·ATR trail (single source of truth for the distance)
     "ema_touch": "fixed_1pct_rr3",          # 1% fixed stop + 3R target (matches the source default)
     "swing_bounce": "structural_rr2",       # swing-anchored stop (entry stop_price) + 2R target
+    "swing_breakout": "structural_rr2",     # breakout through the swing level, swing-anchored stop + 2R
 }
 
 # Resolves the override (else default) into an ExitPolicy

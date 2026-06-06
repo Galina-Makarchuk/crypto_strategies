@@ -23,7 +23,7 @@ from .live import LiveEngine
 from .core import VALID_CATEGORIES, VALID_INTERVALS, StrategyName
 from .strategy_configurator import EXIT_PRESETS, StrategyConfig
 from .trade_configurator import ACTIVE_TRADE, SizingMode, TradeDirection, TradingConfig
-from .strategies import AdaptiveSuperTrendStrategy, EMACrossoverStrategy, InverseEMACrossoverStrategy, EmaTouchStrategy, ExhaustionReversalStrategy, ImpulseFlagStrategy, InverseOrderBlockStrategy, InverseSuperTrendStrategy, SwingMLStrategy, OrderBlockStrategy, SuperTrendStrategy, LevelBreakoutStrategy, SwingBounceStrategy, InverseLevelBreakoutStrategy, SwingFlipStrategy, VWAPBandsStrategy
+from .strategies import AdaptiveSuperTrendStrategy, EMACrossoverStrategy, InverseEMACrossoverStrategy, EmaTouchStrategy, ExhaustionReversalStrategy, ImpulseFlagStrategy, InverseOrderBlockStrategy, InverseSuperTrendStrategy, SwingMLStrategy, OrderBlockStrategy, SuperTrendStrategy, LevelBreakoutStrategy, SwingBounceStrategy, SwingBreakoutStrategy, InverseLevelBreakoutStrategy, SwingFlipStrategy, VWAPBandsStrategy
 from .visualization import build_chart
 
 logger = logging.getLogger(__name__)
@@ -50,6 +50,7 @@ def _build_strategy(name: str, config: StrategyConfig, exit_policy=None):
         StrategyName.VWAP_BANDS.value: VWAPBandsStrategy,
         StrategyName.SWING_FLIP.value: SwingFlipStrategy,
         StrategyName.SWING_ML.value: SwingMLStrategy,
+        StrategyName.SWING_BREAKOUT.value: SwingBreakoutStrategy,
         StrategyName.EMA_TOUCH.value: EmaTouchStrategy,
         StrategyName.SWING_BOUNCE.value: SwingBounceStrategy,
     }

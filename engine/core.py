@@ -50,6 +50,7 @@ class StrategyName(Enum):
     SWING_ML = "swing_ml"
     EMA_TOUCH = "ema_touch"
     SWING_BOUNCE = "swing_bounce"
+    SWING_BREAKOUT = "swing_breakout"
 
 
 class RunMode(Enum):

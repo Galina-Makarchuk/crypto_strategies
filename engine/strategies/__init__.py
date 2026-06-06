@@ -11,6 +11,7 @@ from .supertrend_adaptive import AdaptiveSuperTrendStrategy
 from .supertrend_inv import InverseSuperTrendStrategy
 from .level_breakout import LevelBreakoutStrategy
 from .swing_bounce import SwingBounceStrategy
+from .swing_breakout import SwingBreakoutStrategy
 from .level_breakout_inv import InverseLevelBreakoutStrategy
 from .swing_flip import SwingFlipStrategy
 from .swing_ml import SwingMLStrategy
@@ -31,6 +32,7 @@ __all__ = [
     "SuperTrendStrategy",
     "LevelBreakoutStrategy",
     "SwingBounceStrategy",
+    "SwingBreakoutStrategy",
     "InverseLevelBreakoutStrategy",
     "SwingFlipStrategy",
     "VWAPBandsStrategy",

@@ -34,7 +34,7 @@ pytest engine/tests/test_core.py -v
 pytest engine/tests/test_core.py::TestATR::test_atr_shape -v   # single test
 ```
 
-Valid `--strategy` values live on [StrategyName](engine/core.py) — 16 strategies incl. `level_breakout`(+`_inv`), `ema`(+`_inv`), `supertrend`(+`_inv`/`_adaptive`), `exhaustion_reversal`, `impulse_flag`, `order_block`(+`_inv`), `vwap_bands`, the ATR-prominence ZigZag swing family `swing_flip` / `swing_bounce` (+ML `swing_ml`), and `ema_touch` (EMA touch-and-rejection — distinct from the `ema` crossover). Valid intervals: [VALID_INTERVALS](engine/core.py); valid `--category`: `linear`, `inverse`.
+Valid `--strategy` values live on [StrategyName](engine/core.py) — 17 strategies incl. `level_breakout`(+`_inv`), `ema`(+`_inv`), `supertrend`(+`_inv`/`_adaptive`), `exhaustion_reversal`, `impulse_flag`, `order_block`(+`_inv`), `vwap_bands`, the ATR-prominence ZigZag swing family `swing_flip` / `swing_bounce` / `swing_breakout` (+ML `swing_ml`), and `ema_touch` (EMA touch-and-rejection — distinct from the `ema` crossover). Valid intervals: [VALID_INTERVALS](engine/core.py); valid `--category`: `linear`, `inverse`.
 
 ## Architecture — the big picture
 
