@@ -9,7 +9,7 @@ clears ``ml_p_threshold``, and exits on:
 - An ATR trailing stop (optional, ``ml_use_stop``).
 
 The model artifact is a dict produced by the training notebook
-(``strategy_notebooks/swing_zigzag_ml.ipynb``) and serialized with joblib:
+(``strategy_notebooks/swing_ml.ipynb``) and serialized with joblib:
 
     {
         "model":   sklearn estimator with .predict_proba,
@@ -61,8 +61,8 @@ def _resolve_model_path(path_str: str) -> Path:
     return repo_root / p
 
 
-class MLSwingZigZagStrategy(BaseStrategy):
-    name = "swing_zigzag_ml"
+class SwingMLStrategy(BaseStrategy):
+    name = "swing_ml"
 
     def __init__(
         self,
@@ -89,7 +89,7 @@ class MLSwingZigZagStrategy(BaseStrategy):
         if not self._model_path.exists():
             raise FileNotFoundError(
                 f"ML model not found at {self._model_path}. "
-                "Train it with strategy_notebooks/swing_zigzag_ml.ipynb."
+                "Train it with strategy_notebooks/swing_ml.ipynb."
             )
         bundle = joblib.load(self._model_path)
         self._model = bundle["model"]
@@ -122,7 +122,7 @@ class MLSwingZigZagStrategy(BaseStrategy):
 
         if self._model is None:
             raise ValueError(
-                "MLSwingZigZagStrategy was built with require_model=False, so "
+                "SwingMLStrategy was built with require_model=False, so "
                 "prepare() needs pre-injected ml_p_long / ml_p_short / ml_valid "
                 "columns (supply out-of-sample probabilities, or rebuild with "
                 "require_model=True to run the model)."

@@ -6,7 +6,7 @@ Three sub-modules:
 - ``features`` — causal feature transformers (every column is read-safe at bar i).
 - ``splits``   — purged k-fold with embargo, the right CV for sequential price data.
 
-Strategy code lives in ``strategies/swing_zigzag_ml.py``. This package only
+Strategy code lives in ``strategies/swing_ml.py``. This package only
 contains the offline training scaffolding.
 """
 

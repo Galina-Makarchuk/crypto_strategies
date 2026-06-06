@@ -159,27 +159,27 @@ class TestMLStrategySmoke:
     def test_strategy_loads_and_runs_backtest(self):
         from engine.backtester import Backtester
         from engine.strategy_configurator import StrategyConfig
-        from engine.strategies import MLSwingZigZagStrategy
+        from engine.strategies import SwingMLStrategy
 
         df = _make_ohlcv(600)
         model_path = self._train_dummy_model(df)
         try:
             cfg = StrategyConfig(ml_model_path=str(model_path), ml_p_threshold=0.4)
-            strat = MLSwingZigZagStrategy(cfg)
+            strat = SwingMLStrategy(cfg)
             result = Backtester(strat, symbol="BTCUSDT").run(df, interval="15")
             assert result.num_bars == 600
-            assert result.strategy_name == "swing_zigzag_ml"
+            assert result.strategy_name == "swing_ml"
             assert all(t.is_closed for t in result.trades)
         finally:
             model_path.unlink(missing_ok=True)
 
     def test_missing_model_raises(self):
         from engine.strategy_configurator import StrategyConfig
-        from engine.strategies import MLSwingZigZagStrategy
+        from engine.strategies import SwingMLStrategy
 
         cfg = StrategyConfig(ml_model_path="ml_models/does_not_exist.joblib")
         with pytest.raises(FileNotFoundError):
-            MLSwingZigZagStrategy(cfg)
+            SwingMLStrategy(cfg)
 
 
 class TestOrderFlow:
@@ -269,7 +269,7 @@ class TestOrderFlow:
 
     def test_t3_strategy_loads_and_runs(self):
         """End-to-end: train a tiny model on T3 features, save it, load via
-        MLSwingZigZagStrategy, run the Backtester with pre-merged OFI columns."""
+        SwingMLStrategy, run the Backtester with pre-merged OFI columns."""
         import tempfile
         from pathlib import Path
 
@@ -284,7 +284,7 @@ class TestOrderFlow:
             merge_orderflow_features,
         )
         from engine.strategy_configurator import StrategyConfig
-        from engine.strategies import MLSwingZigZagStrategy
+        from engine.strategies import SwingMLStrategy
 
         # 1) Synthetic klines (4 days, 15m) + synthetic trades over the same window.
         n = 96 * 4
@@ -322,10 +322,10 @@ class TestOrderFlow:
         try:
             _joblib.dump(bundle, tmp)
             cfg = StrategyConfig(ml_model_path=str(tmp), ml_p_threshold=0.4)
-            strat = MLSwingZigZagStrategy(cfg)
+            strat = SwingMLStrategy(cfg)
             # df_with_ofi already has the OFI columns pre-merged.
             result = Backtester(strat, symbol="BTCUSDT").run(df_with_ofi, interval="15")
-            assert result.strategy_name == "swing_zigzag_ml"
+            assert result.strategy_name == "swing_ml"
             assert all(t.is_closed for t in result.trades)
         finally:
             tmp.unlink(missing_ok=True)
@@ -341,7 +341,7 @@ class TestOrderFlow:
         from engine.backtester import Backtester
         from engine.ml.features import FEATURE_COLUMNS_T3
         from engine.strategy_configurator import StrategyConfig
-        from engine.strategies import MLSwingZigZagStrategy
+        from engine.strategies import SwingMLStrategy
 
         # Use a real (tiny) fitted estimator so joblib can pickle it.
         n_feat = len(FEATURE_COLUMNS_T3)
@@ -359,7 +359,7 @@ class TestOrderFlow:
         try:
             _joblib.dump(bundle, tmp)
             cfg = StrategyConfig(ml_model_path=str(tmp), ml_p_threshold=0.4)
-            strat = MLSwingZigZagStrategy(cfg)
+            strat = SwingMLStrategy(cfg)
             df = _make_ohlcv(300)
             with pytest.raises(ValueError, match="order-flow"):
                 Backtester(strat, symbol="BTCUSDT").run(df, interval="15")

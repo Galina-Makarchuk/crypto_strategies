@@ -479,38 +479,38 @@ class TestSwingsDetector:
         assert len(loose) >= len(strict), "raising threshold must not add swings"
 
 
-class TestSwingZigZagStrategy:
+class TestSwingFlipStrategy:
     def test_backtest_runs_on_noise(self):
         from engine.backtester import Backtester
         from engine.strategy_configurator import StrategyConfig
-        from engine.strategies import SwingZigZagStrategy
+        from engine.strategies import SwingFlipStrategy
 
         config = StrategyConfig(swing_zz_min_prominence_atr=1.0)
-        strat = SwingZigZagStrategy(config)
+        strat = SwingFlipStrategy(config)
         df = _make_ohlcv(400, noise=3.0, seed=11)
 
         bt = Backtester(strat)
         result = bt.run(df, interval="15")
         assert result.num_bars == 400
-        assert result.strategy_name == "swing_zigzag"
+        assert result.strategy_name == "swing_flip"
         assert all(t.is_closed for t in result.trades)
 
     def test_no_lookahead(self):
         from engine.core import PositionState
         from engine.strategy_configurator import StrategyConfig
-        from engine.strategies import SwingZigZagStrategy
+        from engine.strategies import SwingFlipStrategy
 
         config = StrategyConfig(swing_zz_min_prominence_atr=1.0)
         df = _make_ohlcv(300, trend=0.05, noise=2.0, seed=4)
 
-        strat_full = SwingZigZagStrategy(config)
+        strat_full = SwingFlipStrategy(config)
         prepared_full = strat_full.prepare(df)
         state_full = PositionState()
         for i in range(len(prepared_full)):
             strat_full.on_bar(i, prepared_full, state_full)
 
         df_short = df.iloc[:180].copy()
-        strat_short = SwingZigZagStrategy(config)
+        strat_short = SwingFlipStrategy(config)
         prepared_short = strat_short.prepare(df_short)
         state_short = PositionState()
         for i in range(len(prepared_short)):

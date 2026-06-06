@@ -23,7 +23,7 @@ from .live import LiveEngine
 from .core import VALID_CATEGORIES, VALID_INTERVALS, StrategyName
 from .strategy_configurator import EXIT_PRESETS, StrategyConfig
 from .trade_configurator import ACTIVE_TRADE, SizingMode, TradeDirection, TradingConfig
-from .strategies import AdaptiveSuperTrendStrategy, EMACrossoverStrategy, InverseEMACrossoverStrategy, EmaTouchStrategy, ExhaustionReversalStrategy, ImpulseFlagStrategy, InverseOrderBlockStrategy, InverseSuperTrendStrategy, MLSwingZigZagStrategy, OrderBlockStrategy, SuperTrendStrategy, LevelBreakoutStrategy, SwingBounceStrategy, InverseLevelBreakoutStrategy, SwingZigZagStrategy, VWAPBandsStrategy
+from .strategies import AdaptiveSuperTrendStrategy, EMACrossoverStrategy, InverseEMACrossoverStrategy, EmaTouchStrategy, ExhaustionReversalStrategy, ImpulseFlagStrategy, InverseOrderBlockStrategy, InverseSuperTrendStrategy, SwingMLStrategy, OrderBlockStrategy, SuperTrendStrategy, LevelBreakoutStrategy, SwingBounceStrategy, InverseLevelBreakoutStrategy, SwingFlipStrategy, VWAPBandsStrategy
 from .visualization import build_chart
 
 logger = logging.getLogger(__name__)
@@ -48,8 +48,8 @@ def _build_strategy(name: str, config: StrategyConfig, exit_policy=None):
         StrategyName.ORDER_BLOCK.value: OrderBlockStrategy,
         StrategyName.ORDER_BLOCK_INV.value: InverseOrderBlockStrategy,
         StrategyName.VWAP_BANDS.value: VWAPBandsStrategy,
-        StrategyName.SWING_ZIGZAG.value: SwingZigZagStrategy,
-        StrategyName.SWING_ZIGZAG_ML.value: MLSwingZigZagStrategy,
+        StrategyName.SWING_FLIP.value: SwingFlipStrategy,
+        StrategyName.SWING_ML.value: SwingMLStrategy,
         StrategyName.EMA_TOUCH.value: EmaTouchStrategy,
         StrategyName.SWING_BOUNCE.value: SwingBounceStrategy,
     }

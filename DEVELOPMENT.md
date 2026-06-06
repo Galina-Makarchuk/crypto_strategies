@@ -53,10 +53,10 @@ engine/
 │   ├── order_block.py           # Order-block retest
 │   ├── order_block_inv.py       # Inverse order block
 │   ├── vwap_bands.py            # VWAP stdev-band mean reversion
-│   ├── swing_zigzag.py          # ATR-prominence ZigZag — flip mode
+│   ├── swing_flip.py            # ATR-prominence ZigZag — flip mode
 │   ├── swing_bounce.py          # ATR-prominence ZigZag — bounce mode (ported)
-│   └── swing_zigzag_ml.py       # ML swing-pivot classifier (imitation learning)
-├── ml/                          # ML pipeline for swing_zigzag_ml: features, labels, splits, order_flow
+│   └── swing_ml.py              # ML swing-pivot classifier (imitation learning)
+├── ml/                          # ML pipeline for swing_ml: features, labels, splits, order_flow
 └── tests/                       # pytest: test_core, test_golden, test_level_detector, test_live, test_ml, …
 ```
 
@@ -117,7 +117,7 @@ pytest engine/tests/test_core.py -v
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--strategy` | `supertrend` | `level_breakout`, `level_breakout_inv`, `ema`, `ema_inv`, `ema_touch`, `supertrend`, `supertrend_inv`, `supertrend_adaptive`, `exhaustion_reversal`, `impulse_flag`, `order_block`, `order_block_inv`, `vwap_bands`, `swing_zigzag`, `swing_zigzag_ml`, `swing_bounce` |
+| `--strategy` | `supertrend` | `level_breakout`, `level_breakout_inv`, `ema`, `ema_inv`, `ema_touch`, `supertrend`, `supertrend_inv`, `supertrend_adaptive`, `exhaustion_reversal`, `impulse_flag`, `order_block`, `order_block_inv`, `vwap_bands`, `swing_flip`, `swing_ml`, `swing_bounce` |
 | `--mode` | `historical` | `historical`, `live` |
 | `--symbol` | `BTCUSDT` | Any Bybit linear perp |
 | `--interval` | `15` | `1,3,5,15,30,60,120,240,360,720,D,W,M` |

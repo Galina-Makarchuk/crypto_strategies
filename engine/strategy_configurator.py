@@ -128,7 +128,7 @@ class StrategyConfig:
     vwap_session: str = "D"                  # session anchor for VWAP reset
     vwap_entry_band: int = 4                 # 0-indexed; default = furthest band
 
-    # ATR-prominence ZigZag swing strategy
+    # ATR-prominence ZigZag swing family (flip / bounce / breakout): shared detection knobs.
     # See engine/swing_detector.py for the detector contract.
     swing_zz_atr_period: int = 14
     swing_zz_min_prominence_atr: float = 1.5
@@ -218,8 +218,8 @@ PER_STRATEGY_EXIT: dict[str, str] = {
     "exhaustion_reversal": "structural",
     "impulse_flag": "structural",
     "vwap_bands": "vwap_mean",
-    "swing_zigzag": "chandelier_3atr",      # 3·ATR trail (single source of truth for the distance)
-    "swing_zigzag_ml": "chandelier_3atr",   # 3·ATR trail (single source of truth for the distance)
+    "swing_flip": "chandelier_3atr",        # 3·ATR trail (single source of truth for the distance)
+    "swing_ml": "chandelier_3atr",          # 3·ATR trail (single source of truth for the distance)
     "ema_touch": "fixed_1pct_rr3",          # 1% fixed stop + 3R target (matches the source default)
     "swing_bounce": "structural_rr2",       # swing-anchored stop (entry stop_price) + 2R target
 }

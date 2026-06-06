@@ -1,4 +1,4 @@
-"""ATR-prominence ZigZag swing strategy.
+"""Swing flip strategy — ATR-prominence ZigZag, flip on each confirmed swing.
 
 Trades the reversal at each confirmed swing pivot from the swings detector:
 
@@ -26,8 +26,8 @@ from ..swing_detector import detect_swings, wilder_atr
 from .base import BaseStrategy
 
 
-class SwingZigZagStrategy(BaseStrategy):
-    name = "swing_zigzag"
+class SwingFlipStrategy(BaseStrategy):
+    name = "swing_flip"
 
     def prepare(self, df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy()

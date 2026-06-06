@@ -46,8 +46,8 @@ class StrategyName(Enum):
     ORDER_BLOCK = "order_block"
     ORDER_BLOCK_INV = "order_block_inv"
     VWAP_BANDS = "vwap_bands"
-    SWING_ZIGZAG = "swing_zigzag"
-    SWING_ZIGZAG_ML = "swing_zigzag_ml"
+    SWING_FLIP = "swing_flip"
+    SWING_ML = "swing_ml"
     EMA_TOUCH = "ema_touch"
     SWING_BOUNCE = "swing_bounce"
 
