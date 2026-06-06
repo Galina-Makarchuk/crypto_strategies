@@ -23,7 +23,7 @@ from .live import LiveEngine
 from .core import VALID_CATEGORIES, VALID_INTERVALS, StrategyName
 from .strategy_configurator import EXIT_PRESETS, StrategyConfig
 from .trade_configurator import ACTIVE_TRADE, SizingMode, TradeDirection, TradingConfig
-from .strategies import AdaptiveSuperTrendStrategy, EMACrossoverStrategy, InverseEMACrossoverStrategy, EmaTouchStrategy, ExhaustionReversalStrategy, ImpulseFlagStrategy, InverseOrderBlockStrategy, InverseSuperTrendStrategy, SwingMLStrategy, OrderBlockStrategy, SuperTrendStrategy, LevelBreakoutStrategy, SwingBounceStrategy, SwingBreakoutStrategy, InverseLevelBreakoutStrategy, SwingFlipStrategy, VWAPBandsStrategy
+from .strategies import AdaptiveSuperTrendStrategy, EMACrossoverStrategy, InverseEMACrossoverStrategy, EmaTouchStrategy, ExhaustionReversalStrategy, ImpulseFlagStrategy, InverseOrderBlockStrategy, InverseSuperTrendStrategy, SwingMLStrategy, OrderBlockStrategy, SuperTrendStrategy, FractalBreakoutStrategy, InverseFractalBreakoutStrategy, LevelBreakoutStrategy, InverseLevelBreakoutStrategy, SwingBounceStrategy, SwingBreakoutStrategy, SwingFlipStrategy, VWAPBandsStrategy
 from .visualization import build_chart
 
 logger = logging.getLogger(__name__)
@@ -38,6 +38,8 @@ def _build_strategy(name: str, config: StrategyConfig, exit_policy=None):
     strategies = {
         StrategyName.LEVEL_BREAKOUT.value: LevelBreakoutStrategy,
         StrategyName.LEVEL_BREAKOUT_INV.value: InverseLevelBreakoutStrategy,
+        StrategyName.FRACTAL_BREAKOUT.value: FractalBreakoutStrategy,
+        StrategyName.FRACTAL_BREAKOUT_INV.value: InverseFractalBreakoutStrategy,
         StrategyName.EMA_CROSS.value: EMACrossoverStrategy,
         StrategyName.EMA_CROSS_INV.value: InverseEMACrossoverStrategy,
         StrategyName.SUPERTREND.value: SuperTrendStrategy,

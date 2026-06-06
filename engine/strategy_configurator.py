@@ -49,10 +49,25 @@ from .exits import (
 class StrategyConfig:
     """Immutable strategy parameters.  All magic numbers live here."""
 
-    # Level-breakout strategy: N-bar fractal-pivot S/R detection
+    # Fractal-breakout strategy (fractal_breakout / _inv): N-bar fractal-pivot S/R
+    # detection via indicators.detect_swing_* + merge_price_levels.
     left: int = 5
     right: int = 5
     merge_tolerance: float = 0.0015  # 0.15 %
+
+    # Level-breakout family (level_breakout / _inv; room to grow level_bounce /
+    # level_retest): horizontal S/R from the dedicated engine.level_detector
+    # (stateful resistance/support/pullback levels seeded at confirmed pivots and
+    # tracked forward until invalidated). Distinct from the fractal_breakout knobs
+    # above. See engine/level_detector.py for the detector contract.
+    level_pivot_window: int = 3             # symmetric pivot window for all 3 families
+    level_delta: float = 0.5                # invalidation tolerance magnitude; units set by level_delta_mode
+    level_delta_mode: str = "atr"           # "absolute" (quote pts) | "percent" (% of level) | "atr" (×ATR)
+    level_invalidation_candles: int = 3     # bracket count ([low,high] straddles level) before a level dies
+    level_atr_period: int = 14              # ATR period (level_delta_mode='atr' + exit/sizing ATR)
+    level_use_pullback: bool = False        # fold the pullback family into the S/R level set
+    level_breakout_buffer_atr: float = 0.0  # close must clear the level by this ×ATR to trigger
+    level_stop_atr_mult: float = 1.5        # level_breakout entry stop = broken level ∓ mult·ATR (structural)
 
     # EMA crossover
     ema_fast: int = 9
@@ -227,6 +242,12 @@ DEFAULT_EXIT = "chandelier_2atr"
 # (keyed by the strategy's name string, never by importing the class — keeps the import graph acyclic)
 # Change which exit a strategy uses here.
 PER_STRATEGY_EXIT: dict[str, str] = {
+    # level_breakout: stop anchored on the broken level (entry stop_price) + 2R target.
+    # level_breakout_inv fades the breakout: ATR stop from entry + 2R target (no level to anchor).
+    # (fractal_breakout / _inv are intentionally absent → inherit DEFAULT_EXIT chandelier_2atr,
+    #  preserving the byte-for-byte behaviour of the pre-rename level_breakout.)
+    "level_breakout": "structural_rr2",
+    "level_breakout_inv": "atr_stop_rr2",
     "order_block": "structural",
     "order_block_inv": "structural",
     "exhaustion_reversal": "structural",

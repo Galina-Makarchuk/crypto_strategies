@@ -34,7 +34,7 @@ pytest engine/tests/test_core.py -v
 pytest engine/tests/test_core.py::TestATR::test_atr_shape -v   # single test
 ```
 
-Valid `--strategy` values live on [StrategyName](engine/core.py) — 17 strategies incl. `level_breakout`(+`_inv`), `ema`(+`_inv`), `supertrend`(+`_inv`/`_adaptive`), `exhaustion_reversal`, `impulse_flag`, `order_block`(+`_inv`), `vwap_bands`, the ATR-prominence ZigZag swing family `swing_flip` / `swing_bounce` / `swing_breakout` (+ML `swing_ml`), and `ema_touch` (EMA touch-and-rejection — distinct from the `ema` crossover). Valid intervals: [VALID_INTERVALS](engine/core.py); valid `--category`: `linear`, `inverse`.
+Valid `--strategy` values live on [StrategyName](engine/core.py) — 19 strategies incl. two breakout families that use **different** level detectors: `level_breakout`(+`_inv`) on the stateful horizontal-S/R [level_detector.py](engine/level_detector.py), and `fractal_breakout`(+`_inv`) on N-bar fractal pivots from [indicators.py](engine/indicators.py) (`detect_swing_*`). Plus `ema`(+`_inv`), `supertrend`(+`_inv`/`_adaptive`), `exhaustion_reversal`, `impulse_flag`, `order_block`(+`_inv`), `vwap_bands`, the ATR-prominence ZigZag swing family `swing_flip` / `swing_bounce` / `swing_breakout` (+ML `swing_ml`), and `ema_touch` (EMA touch-and-rejection — distinct from the `ema` crossover). The `level_*` family has room to grow (`level_bounce`, `level_retest`) on the shared [level_base.py](engine/strategies/level_base.py). Valid intervals: [VALID_INTERVALS](engine/core.py); valid `--category`: `linear`, `inverse`.
 
 ## Architecture — the big picture
 

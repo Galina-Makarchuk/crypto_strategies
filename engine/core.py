@@ -34,8 +34,10 @@ class PositionStatus(Enum):
 
 
 class StrategyName(Enum):
-    LEVEL_BREAKOUT = "level_breakout"
+    LEVEL_BREAKOUT = "level_breakout"            # engine.level_detector horizontal S/R
     LEVEL_BREAKOUT_INV = "level_breakout_inv"
+    FRACTAL_BREAKOUT = "fractal_breakout"        # indicators.detect_swing_* fractal pivots
+    FRACTAL_BREAKOUT_INV = "fractal_breakout_inv"
     EMA_CROSS = "ema"
     EMA_CROSS_INV = "ema_inv"
     SUPERTREND = "supertrend"

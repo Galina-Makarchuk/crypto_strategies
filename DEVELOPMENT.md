@@ -38,10 +38,13 @@ engine/
 ├── live_records.py              # SQLite-backed live records: open position + trade history
 ├── live.py                      # Live trading loop with circuit breaker + SIGTERM
 ├── cli.py                       # Argument parsing + strategy dispatch
-├── strategies/                  # 16 strategies, each a BaseStrategy (prepare + on_bar)
+├── strategies/                  # 19 strategies, each a BaseStrategy (prepare + on_bar)
 │   ├── base.py                  # Abstract base: prepare() + on_bar() + exit-policy injection
-│   ├── level_breakout.py        # N-bar fractal-pivot S/R breakout
-│   ├── level_breakout_inv.py    # Inverse: fade the breakout
+│   ├── fractal_breakout.py      # N-bar fractal-pivot S/R breakout (indicators.detect_swing_*)
+│   ├── fractal_breakout_inv.py  # Inverse: fade the fractal breakout
+│   ├── level_base.py            # Shared base for the level_* family (engine.level_detector)
+│   ├── level_breakout.py        # Breakout of horizontal S/R from engine.level_detector
+│   ├── level_breakout_inv.py    # Inverse: fade the level breakout
 │   ├── ema_cross.py             # EMA crossover + RSI filter
 │   ├── ema_cross_inv.py         # Inverse EMA crossover
 │   ├── ema_touch.py             # EMA touch-and-rejection (ported from the ema project)
@@ -118,7 +121,7 @@ pytest engine/tests/test_core.py -v
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--strategy` | `supertrend` | `level_breakout`, `level_breakout_inv`, `ema`, `ema_inv`, `ema_touch`, `supertrend`, `supertrend_inv`, `supertrend_adaptive`, `exhaustion_reversal`, `impulse_flag`, `order_block`, `order_block_inv`, `vwap_bands`, `swing_flip`, `swing_ml`, `swing_bounce`, `swing_breakout` |
+| `--strategy` | `supertrend` | `level_breakout`, `level_breakout_inv`, `fractal_breakout`, `fractal_breakout_inv`, `ema`, `ema_inv`, `ema_touch`, `supertrend`, `supertrend_inv`, `supertrend_adaptive`, `exhaustion_reversal`, `impulse_flag`, `order_block`, `order_block_inv`, `vwap_bands`, `swing_flip`, `swing_ml`, `swing_bounce`, `swing_breakout` |
 | `--mode` | `historical` | `historical`, `live` |
 | `--symbol` | `BTCUSDT` | Any Bybit linear perp |
 | `--interval` | `15` | `1,3,5,15,30,60,120,240,360,720,D,W,M` |
