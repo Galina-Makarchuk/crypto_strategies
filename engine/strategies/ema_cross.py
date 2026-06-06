@@ -67,9 +67,13 @@ class EMACrossoverStrategy(BaseStrategy):
         if state.current_trade is not None:
             return
 
-        if bullish_cross and rsi_val < 70:
+        # RSI gates by entry direction; disabled when config.rsi_filter is off.
+        long_ok = not self.config.rsi_filter or rsi_val < self.config.rsi_bullish
+        short_ok = not self.config.rsi_filter or rsi_val > self.config.rsi_bearish
+
+        if bullish_cross and long_ok:
             state.enter(Direction.LONG, ts, close,
                         stop_price=self._entry_stop(Direction.LONG, close, atr_val))
-        elif bearish_cross and rsi_val > 30:
+        elif bearish_cross and short_ok:
             state.enter(Direction.SHORT, ts, close,
                         stop_price=self._entry_stop(Direction.SHORT, close, atr_val))

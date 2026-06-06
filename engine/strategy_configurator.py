@@ -58,8 +58,16 @@ class StrategyConfig:
     ema_fast: int = 9
     ema_slow: int = 21
 
-    # RSI
+    # RSI — momentum filter on the EMA-cross entries (ema / ema_inv).
+    # rsi_filter is the master on/off; when off, EMA crosses enter unfiltered.
+    # The bounds gate by the *resulting entry direction* (not the cross), so the
+    # same two knobs apply identically to the base and inverse strategies:
+    #   long  entries are skipped when rsi >= rsi_bullish (overbought)
+    #   short entries are skipped when rsi <= rsi_bearish (oversold)
     rsi_period: int = 14
+    rsi_filter: bool = True
+    rsi_bullish: float = 70.0
+    rsi_bearish: float = 30.0
 
     # SuperTrend
     supertrend_period: int = 10

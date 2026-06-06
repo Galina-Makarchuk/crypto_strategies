@@ -72,11 +72,16 @@ class InverseEMACrossoverStrategy(BaseStrategy):
         if state.current_trade is not None:
             return
 
+        # RSI gates by entry direction (same knobs as the base strategy);
+        # disabled when config.rsi_filter is off.
+        long_ok = not self.config.rsi_filter or rsi_val < self.config.rsi_bullish
+        short_ok = not self.config.rsi_filter or rsi_val > self.config.rsi_bearish
+
         # Original goes LONG on bullish_cross → we go SHORT
-        if bullish_cross and rsi_val > 30:
+        if bullish_cross and short_ok:
             state.enter(Direction.SHORT, ts, close,
                         stop_price=self._entry_stop(Direction.SHORT, close, atr_val))
         # Original goes SHORT on bearish_cross → we go LONG
-        elif bearish_cross and rsi_val < 70:
+        elif bearish_cross and long_ok:
             state.enter(Direction.LONG, ts, close,
                         stop_price=self._entry_stop(Direction.LONG, close, atr_val))
