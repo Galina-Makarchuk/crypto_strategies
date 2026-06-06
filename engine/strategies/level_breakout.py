@@ -27,8 +27,8 @@ from .base import BaseStrategy
 class LevelBreakoutStrategy(BaseStrategy):
     name = "level_breakout"
 
-    def __init__(self, config: StrategyConfig):
-        super().__init__(config)
+    def __init__(self, config: StrategyConfig, exit_policy=None):
+        super().__init__(config, exit_policy)
         self._swing_highs: list[tuple[int, float]] = []
         self._swing_lows: list[tuple[int, float]] = []
 

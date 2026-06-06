@@ -55,8 +55,8 @@ class OrderBlockStrategy(BaseStrategy):
 
     name = "order_block"
 
-    def __init__(self, config: StrategyConfig):
-        super().__init__(config)
+    def __init__(self, config: StrategyConfig, exit_policy=None):
+        super().__init__(config, exit_policy)
         self._obs: List[_OrderBlock] = []
         self._active_stop: float = 0.0
         self._active_target: float = 0.0

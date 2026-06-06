@@ -26,8 +26,8 @@ from .base import BaseStrategy
 class AdaptiveSuperTrendStrategy(BaseStrategy):
     name = "supertrend_adaptive"
 
-    def __init__(self, config: StrategyConfig, adx_threshold: float = 25.0):
-        super().__init__(config)
+    def __init__(self, config: StrategyConfig, adx_threshold: float = 25.0, exit_policy=None):
+        super().__init__(config, exit_policy)
         self.adx_threshold = adx_threshold
         # Regime (trending vs ranging) captured at entry. The exit-flip side is
         # decided by THIS, not the current bar's regime, so a mid-trade ADX

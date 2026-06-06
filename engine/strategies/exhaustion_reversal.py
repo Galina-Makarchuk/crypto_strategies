@@ -139,8 +139,8 @@ class ExhaustionReversalStrategy(BaseStrategy):
 
     name = "exhaustion_reversal"
 
-    def __init__(self, config: StrategyConfig):
-        super().__init__(config)
+    def __init__(self, config: StrategyConfig, exit_policy=None):
+        super().__init__(config, exit_policy)
         self._tracker = _StreakTracker()
         self._entry_bar_idx: int = -1
         self._stop_price: float = 0.0

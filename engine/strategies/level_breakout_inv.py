@@ -26,8 +26,8 @@ from .base import BaseStrategy
 class InverseLevelBreakoutStrategy(BaseStrategy):
     name = "level_breakout_inv"
 
-    def __init__(self, config: StrategyConfig):
-        super().__init__(config)
+    def __init__(self, config: StrategyConfig, exit_policy=None):
+        super().__init__(config, exit_policy)
         self._swing_highs: list[tuple[int, float]] = []
         self._swing_lows: list[tuple[int, float]] = []
 

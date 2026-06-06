@@ -71,8 +71,8 @@ class ImpulseFlagStrategy(BaseStrategy):
 
     name = "impulse_flag"
 
-    def __init__(self, config: StrategyConfig):
-        super().__init__(config)
+    def __init__(self, config: StrategyConfig, exit_policy=None):
+        super().__init__(config, exit_policy)
         self._pending: Optional[_Setup] = None
         self._initial_stop: float = 0.0
         self._active_stop: float = 0.0
