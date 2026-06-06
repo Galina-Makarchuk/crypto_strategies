@@ -295,3 +295,65 @@ def build_chart(
         logger.info("Chart saved → %s", save_path)
 
     return fig
+
+
+# Resistance = red solid, support = green solid, pullback = orange dotted.
+_LEVEL_STYLE = {
+    "resistance": dict(color="red", dash="solid"),
+    "support": dict(color="green", dash="solid"),
+    "pullback": dict(color="orange", dash="dot"),
+}
+
+
+def plot_levels(
+    df: pd.DataFrame,
+    levels_by_kind: dict,
+    *,
+    show_invalidated: bool = True,
+    title: Optional[str] = None,
+) -> go.Figure:
+    """Overlay :class:`engine.level_detector.Level` records on a candlestick chart.
+
+    Each level is drawn from its ``start_idx`` candle to its ``invalidated_at``
+    candle (or the last candle if still active). ``show_invalidated=False`` hides
+    invalidated segments. All segments of one kind are packed into a single
+    ``Scatter`` with ``None``-separated coordinates, which avoids the O(n²)
+    blow-up of looping ``add_shape`` on thousands of levels.
+
+    Adapted from the source's ``plot_levels``: tradekit candles are indexed by a
+    tz-aware UTC timestamp (no ``timestamp`` column), so x-coordinates come from
+    ``df.index``.
+    """
+    idx = df.index.tolist()
+    last_idx = len(df) - 1
+
+    fig = go.Figure(data=[go.Candlestick(
+        x=df.index, open=df["open"], high=df["high"], low=df["low"], close=df["close"],
+        name="price",
+    )])
+
+    for kind, levels in levels_by_kind.items():
+        style = _LEVEL_STYLE[kind]
+        xs: list = []
+        ys: list = []
+        for lvl in levels:
+            if not show_invalidated and lvl.invalidated_at is not None:
+                continue
+            end_idx = lvl.invalidated_at if lvl.invalidated_at is not None else last_idx
+            xs.extend((idx[lvl.start_idx], idx[end_idx], None))
+            ys.extend((lvl.price, lvl.price, None))
+        if not xs:
+            continue
+        fig.add_trace(go.Scatter(
+            x=xs, y=ys, mode="lines",
+            line=dict(color=style["color"], dash=style["dash"], width=1),
+            name=kind, hoverinfo="skip", showlegend=True,
+        ))
+
+    fig.update_layout(
+        title=title or "Dynamic levels (red=resistance, green=support, orange=pullback)",
+        template="plotly_dark",
+        xaxis_rangeslider_visible=False,
+        height=700,
+    )
+    return fig

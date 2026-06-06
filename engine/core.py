@@ -48,6 +48,8 @@ class StrategyName(Enum):
     VWAP_BANDS = "vwap_bands"
     SWING_ZIGZAG = "swing_zigzag"
     SWING_ZIGZAG_ML = "swing_zigzag_ml"
+    EMA_TOUCH = "ema_touch"
+    SWING_BOUNCE = "swing_bounce"
 
 
 class RunMode(Enum):

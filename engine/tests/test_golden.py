@@ -46,6 +46,8 @@ STRATEGIES = {
     "order_block_inv": S.InverseOrderBlockStrategy,
     "vwap_bands": S.VWAPBandsStrategy,
     "swing_zigzag": S.SwingZigZagStrategy,
+    "ema_touch": S.EmaTouchStrategy,
+    "swing_bounce": S.SwingBounceStrategy,
 }
 
 

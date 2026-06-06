@@ -1,6 +1,7 @@
 from .base import BaseStrategy
 from .ema_cross import EMACrossoverStrategy
 from .ema_cross_inv import InverseEMACrossoverStrategy
+from .ema_touch import EmaTouchStrategy
 from .exhaustion_reversal import ExhaustionReversalStrategy
 from .impulse_flag import ImpulseFlagStrategy
 from .order_block import OrderBlockStrategy
@@ -9,6 +10,7 @@ from .supertrend import SuperTrendStrategy
 from .supertrend_adaptive import AdaptiveSuperTrendStrategy
 from .supertrend_inv import InverseSuperTrendStrategy
 from .swing import SwingBreakoutStrategy
+from .swing_bounce import SwingBounceStrategy
 from .swing_inv import InverseSwingBreakoutStrategy
 from .swing_zigzag import SwingZigZagStrategy
 from .swing_zigzag_ml import MLSwingZigZagStrategy
@@ -19,6 +21,7 @@ __all__ = [
     "BaseStrategy",
     "EMACrossoverStrategy",
     "InverseEMACrossoverStrategy",
+    "EmaTouchStrategy",
     "ExhaustionReversalStrategy",
     "ImpulseFlagStrategy",
     "InverseOrderBlockStrategy",
@@ -27,6 +30,7 @@ __all__ = [
     "OrderBlockStrategy",
     "SuperTrendStrategy",
     "SwingBreakoutStrategy",
+    "SwingBounceStrategy",
     "InverseSwingBreakoutStrategy",
     "SwingZigZagStrategy",
     "VWAPBandsStrategy",

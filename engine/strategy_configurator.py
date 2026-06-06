@@ -32,6 +32,7 @@ from .exits import (
     RrTarget,
     StructuralStop,
     StructuralTarget,
+    FixedPctTarget,
 )
 
 
@@ -142,6 +143,30 @@ class StrategyConfig:
     ml_p_threshold: float = 0.55
     ml_use_stop: bool = True  # toggle only; trail distance = PER_STRATEGY_EXIT preset (chandelier_3atr)
 
+    # EMA touch-and-rejection strategy (ported from the ema project's backtest.py).
+    # Entry: a bar's wick touches the entry EMA within `delta` tolerance AND the
+    # bar closes back on the rejection side (long: close >= EMA; short: close <=
+    # EMA); optional slower-EMA regime gate. Stop/TP come from the exit policy
+    # (default preset fixed_1pct_rr3 = 1% stop + 3R target).
+    ema_touch_period: int = 50                      # entry EMA span (symmetric fallback)
+    ema_touch_period_long: int | None = None        # per-side entry EMA override (None -> ema_touch_period)
+    ema_touch_period_short: int | None = None
+    ema_touch_delta: float = 40.0                   # touch tolerance magnitude; units set by delta_mode
+    ema_touch_delta_mode: str = "absolute"          # "absolute" (quote points) | "percent" (% of EMA) | "atr" (×ATR)
+    ema_touch_atr_period: int = 14                  # ATR period (delta_mode='atr' + any ATR-based exit preset)
+    ema_touch_regime_filter: int | None = None      # optional slower regime EMA (longs only above it, shorts below)
+    ema_touch_regime_filter_long: int | None = None
+    ema_touch_regime_filter_short: int | None = None
+
+    # Swing bounce strategy (mean-reversion off confirmed swing pivots; ported
+    # from the ema project's swing_strategy.py bounce mode). Detection reuses the
+    # ATR-prominence ZigZag knobs above (swing_zz_atr_period / _min_prominence_atr
+    # / _min_bars_between / _vol_lookback / _min_score); these are bounce-specific.
+    swing_bounce_test_tolerance_atr: float = 0.5        # how close (in ATR) the wick must come to the swing level
+    swing_bounce_require_close_rejection: bool = True   # bar must close back across the level
+    swing_bounce_stop_atr_mult: float = 1.0             # entry stop = swing price ∓ mult·ATR (swing-anchored)
+    swing_bounce_min_bars_between_trades: int = 0       # cooldown bars after an exit before re-entry
+
 
 # ── Exit / take-profit policy catalog ──────────────────────────────────────────
 # This is where SL/TP behaviour is defined and assigned.
@@ -152,17 +177,32 @@ class StrategyConfig:
 # Named presets that build a stop+target from the mechanisms in engine/exits.py
 # Each value is a preset so a fresh policy is created per use.
 # Add a new SL/TP combo here.
-# List the stop before any target for stop-first precedence on ambiguous bars.
+# ExitPolicy:
+# — either a single mechanism (a trailing ChandelierStop, or a TP-only CloseCrossTarget)
+# - or a CompositeExit(stop, target) that runs a stop then a target (stop-first)
 EXIT_PRESETS: dict[str, "callable[[], ExitPolicy]"] = {
+    
+    # SL-only presets: trailing chandeliers + static fixed stops
     "chandelier_2atr": lambda: ChandelierStop(2.0),    # matches today's trend-strategy trail
     "chandelier_3atr": lambda: ChandelierStop(3.0),
+    "fixed_2pct": lambda: FixedPctStop(2.0),   # fixed stop only; position otherwise exits on the strategy's native signal
+    "atr_stop":   lambda: AtrStop(1.5),        # fixed (non-trailing) ATR stop only
+
+    # fixed SL + a target
+    # List the stop before any target for stop-first precedence on ambiguous bars.
     "atr_stop_rr2":    lambda: CompositeExit(AtrStop(1.5), RrTarget(2.0)),
     "structural_rr2":  lambda: CompositeExit(StructuralStop(), RrTarget(2.0)),
     "fixed_2pct_rr3":  lambda: CompositeExit(FixedPctStop(2.0), RrTarget(3.0)),
-    # Fixed stop + fixed target, both at strategy-supplied levels (ref_stop via
-    # the entry stop_price, ref_target passed per bar). Stop-first.
+    "fixed_1pct_rr3":  lambda: CompositeExit(FixedPctStop(1.0), RrTarget(3.0)),  # ema_touch default (1% stop, 3R)
+    
+    # fixed SL + fixed TP, both at strategy-supplied levels
+    # (ref_stop via the entry stop_price, ref_target passed per bar). Stop-first.
     "structural":      lambda: CompositeExit(StructuralStop(), StructuralTarget()),
-    # Take-profit only, when the close reverts to a level (the VWAP mean). No stop.
+    "fixed_2pct_3pct": lambda: CompositeExit(FixedPctStop(2.0), FixedPctTarget(3.0)),
+    
+    # TP-only presets:
+    "fixed_3pct_tp":   lambda: FixedPctTarget(3.0),      # take-profit only, no stop
+    # When the close reverts to a level (the VWAP mean). No stop.
     "vwap_mean":       lambda: CloseCrossTarget(),
 }
 
@@ -180,9 +220,16 @@ PER_STRATEGY_EXIT: dict[str, str] = {
     "vwap_bands": "vwap_mean",
     "swing_zigzag": "chandelier_3atr",      # 3·ATR trail (single source of truth for the distance)
     "swing_zigzag_ml": "chandelier_3atr",   # 3·ATR trail (single source of truth for the distance)
+    "ema_touch": "fixed_1pct_rr3",          # 1% fixed stop + 3R target (matches the source default)
+    "swing_bounce": "structural_rr2",       # swing-anchored stop (entry stop_price) + 2R target
 }
 
-# resolves the override (else default) into an ExitPolicy
+# Resolves the override (else default) into an ExitPolicy
+# Finds this strategy's exit recipe (its own if it has one, otherwise the default), and makes a fresh one.
+# 3 steps:
+# PER_STRATEGY_EXIT.get(name, DEFAULT_EXIT) → the preset name for this strategy, or default "chandelier_2atr" if it has no override.
+# EXIT_PRESETS[…] → look up that name's factory (the lambda).
+# () → call it to build a brand-new ExitPolicy object.
 def exit_policy_for(strategy_name: str) -> ExitPolicy:
     """Build the exit policy assigned to a strategy (its override, else the
     global default). Called by BaseStrategy to seed self.exit_policy."""

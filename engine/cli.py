@@ -3,6 +3,11 @@
 Usage:
     python -m engine --strategy supertrend --mode historical --interval 15 --candles 800
     python -m engine --strategy ema --mode live --interval 5 --poll 30
+
+The CLI only exposes trade-level knobs, not strategy params.
+StrategyConfig() is built with defaults (cli.py:236) — there are no --atr-period-style flags.
+So indicator/signal tuning still happens by editing StrategyConfig, 
+while the per-run flags cover TradingConfig (costs, sizing, direction, equity) plus --exit-preset.
 """
 
 from __future__ import annotations
@@ -18,7 +23,7 @@ from .live import LiveEngine
 from .core import VALID_CATEGORIES, VALID_INTERVALS, StrategyName
 from .strategy_configurator import EXIT_PRESETS, StrategyConfig
 from .trade_configurator import ACTIVE_TRADE, SizingMode, TradeDirection, TradingConfig
-from .strategies import AdaptiveSuperTrendStrategy, EMACrossoverStrategy, InverseEMACrossoverStrategy, ExhaustionReversalStrategy, ImpulseFlagStrategy, InverseOrderBlockStrategy, InverseSuperTrendStrategy, MLSwingZigZagStrategy, OrderBlockStrategy, SuperTrendStrategy, SwingBreakoutStrategy, InverseSwingBreakoutStrategy, SwingZigZagStrategy, VWAPBandsStrategy
+from .strategies import AdaptiveSuperTrendStrategy, EMACrossoverStrategy, InverseEMACrossoverStrategy, EmaTouchStrategy, ExhaustionReversalStrategy, ImpulseFlagStrategy, InverseOrderBlockStrategy, InverseSuperTrendStrategy, MLSwingZigZagStrategy, OrderBlockStrategy, SuperTrendStrategy, SwingBreakoutStrategy, SwingBounceStrategy, InverseSwingBreakoutStrategy, SwingZigZagStrategy, VWAPBandsStrategy
 from .visualization import build_chart
 
 logger = logging.getLogger(__name__)
@@ -45,6 +50,8 @@ def _build_strategy(name: str, config: StrategyConfig, exit_policy=None):
         StrategyName.VWAP_BANDS.value: VWAPBandsStrategy,
         StrategyName.SWING_ZIGZAG.value: SwingZigZagStrategy,
         StrategyName.SWING_ZIGZAG_ML.value: MLSwingZigZagStrategy,
+        StrategyName.EMA_TOUCH.value: EmaTouchStrategy,
+        StrategyName.SWING_BOUNCE.value: SwingBounceStrategy,
     }
     cls = strategies.get(name)
     if cls is None:
