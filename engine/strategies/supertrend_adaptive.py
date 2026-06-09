@@ -26,9 +26,8 @@ from .base import BaseStrategy
 class AdaptiveSuperTrendStrategy(BaseStrategy):
     name = "supertrend_adaptive"
 
-    def __init__(self, config: StrategyConfig, adx_threshold: float = 25.0, exit_policy=None):
+    def __init__(self, config: StrategyConfig, exit_policy=None):
         super().__init__(config, exit_policy)
-        self.adx_threshold = adx_threshold
         # Regime (trending vs ranging) captured at entry. The exit-flip side is
         # decided by THIS, not the current bar's regime, so a mid-trade ADX
         # crossing can't flip a position's exit condition. None when flat (or a
@@ -68,7 +67,7 @@ class AdaptiveSuperTrendStrategy(BaseStrategy):
         if pd.isna(adx_val):
             return
 
-        trending = adx_val >= self.adx_threshold
+        trending = adx_val >= self.config.adx_threshold
 
         # ── Update trailing stop peak ──────────────────────────────────────
         if state.current_trade is not None:

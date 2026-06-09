@@ -14,7 +14,7 @@ Builds on the existing `data_configurator.py` ergonomic (an editable default blo
 - `Direction` enum has **only `LONG`/`SHORT`** (no `BOTH`); 14 strategy files reference `Direction.SHORT`, i.e. strategies trade both ways today.
 - `save_result` lives in **`engine.data_configurator`** (not a separate module).
 - `risk_per_trade_pct` / `max_open_trades` are read **nowhere** — the backtester has no equity/position-sizing layer (computes P&L in bps per trade).
-- `AdaptiveSuperTrendStrategy` takes a constructor-only `adx_threshold=25.0`.
+- `AdaptiveSuperTrendStrategy`'s `adx_threshold` (default `25.0`) is now a `StrategyConfig` field (`engine/strategy_configurator.py`), read via `self.config.adx_threshold` — no longer a constructor arg, so it sweeps/overrides like any other signal knob.
 
 ## Files
 

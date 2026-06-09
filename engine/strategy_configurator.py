@@ -87,6 +87,9 @@ class StrategyConfig:
     # SuperTrend
     supertrend_period: int = 10
     supertrend_mult: float = 3.0
+    # Adaptive SuperTrend (supertrend_adaptive) regime switch: ADX >= adx_threshold
+    # = trending (follow the trend) else ranging (fade it). ADX period reuses atr_period.
+    adx_threshold: float = 25.0
 
     # ATR
     atr_period: int = 14
