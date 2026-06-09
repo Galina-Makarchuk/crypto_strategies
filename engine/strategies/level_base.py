@@ -19,6 +19,25 @@ at bar ``i`` only when both hold, and both are causal (decided from data ≤ ``i
 * **Alive**: ``invalidated_at is None or i <= invalidated_at`` — the detector's
   first-invalidation bar (computed from data up to that bar only), so a breakout
   bar that consumes the level can still see it, and it drops the next bar.
+
+How it works:
+The level_base.py uses the levels detected in level_detector.py - their exact prices, unmodified.
+Entries are triggered on the detected levels against those prices.
+The stop is anchored on the detected level too.
+The only added quantity is level_breakout_buffer_atr, which defaults to 0.0 —
+so by default the cross is measured exactly at the detected level,
+with the ATR buffer available only to demand a more decisive break.
+On top of this, the base filters + selects, but does not alter the levels.
+
+Three things happen, none of which change a level's price:
+1. Family selection:
+Keeps resistance + support (optionally pullback).
+Chooses which detected levels to include.
+2. Causal time-gate:
+Returns only active levels: detected levels that are already confirmed and not yet invalidated as of bar i.
+This selects which detected levels are visible at each bar; it doesn't move them.
+3. Geometric classification:
+Each visible detected level is bucketed as "overhead" or "underlying" (prev_close > lvl) by its position vs the prior close.
 """
 
 from __future__ import annotations
