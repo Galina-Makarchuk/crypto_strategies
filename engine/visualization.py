@@ -4,6 +4,8 @@ Key improvements over original:
 - Signals batched into 4 traces (long_entry, short_entry, long_exit, short_exit)
   instead of one trace per signal → fast rendering even with 300+ trades.
 - Optional SuperTrend / EMA overlays.
+- Pass ``trades=`` (instead of ``signals=``) for a richer trade view: exit markers
+  coloured by exit reason with per-trade P&L on hover, plus entry→exit path lines.
 - Returns the figure; writes a standalone HTML file only when save_path is given
   (CLI / live mode). Notebooks display the returned figure inline — no stray file.
 """
@@ -19,7 +21,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from .core import Signal, SignalAction, Direction
+from .core import Signal, SignalAction, Direction, Trade
 
 logger = logging.getLogger(__name__)
 
@@ -47,14 +49,83 @@ _MARKER_STYLES = {
     },
 }
 
+# Exit-reason → colour (keys are ExitReason.value), used by the trade view.
+_EXIT_REASON_COLORS = {
+    "take_profit":   "#16c784",
+    "stop_loss":     "#e23636",
+    "trailing_stop": "#f5a623",
+    "signal_flip":   "#3b82f6",
+    "time_stop":     "#a855f7",
+    "invalidation":  "#06b6d4",
+    "force_close":   "#9ca3af",
+}
+
+
+def _add_trade_markers(fig: go.Figure, trades: list[Trade]) -> None:
+    """Render trades onto row 1: entry markers by direction, exit markers grouped
+    and coloured by exit reason (per-trade P&L on hover), and a faint entry→exit
+    path line per trade (one ``None``-separated trace, so it stays cheap)."""
+    # Entries, by direction.
+    for direction, color, symbol, name in (
+        (Direction.LONG, "#22c55e", "triangle-up", "Long entry"),
+        (Direction.SHORT, "#ef4444", "triangle-down", "Short entry"),
+    ):
+        ts = [t for t in trades if t.direction == direction and t.entry_ts is not None]
+        if ts:
+            fig.add_trace(
+                go.Scatter(
+                    x=[t.entry_ts for t in ts], y=[t.entry_price for t in ts],
+                    mode="markers", name=name,
+                    marker=dict(symbol=symbol, size=11, color=color,
+                                line=dict(width=1.2, color="black")),
+                    hovertemplate=f"{name.lower()} %{{y:,.2f}}<br>%{{x}}<extra></extra>",
+                ),
+                row=1, col=1,
+            )
+    # Exits, grouped + coloured by reason, P&L (bps) on hover.
+    for reason, color in _EXIT_REASON_COLORS.items():
+        ts = [t for t in trades
+              if t.exit_ts is not None and t.exit_reason is not None
+              and t.exit_reason.value == reason]
+        if not ts:
+            continue
+        fig.add_trace(
+            go.Scatter(
+                x=[t.exit_ts for t in ts], y=[t.exit_price for t in ts],
+                mode="markers", name=f"exit: {reason}",
+                marker=dict(symbol="x", size=10, color=color, line=dict(width=1, color=color)),
+                customdata=[t.pnl_bps for t in ts],
+                hovertemplate=(f"exit ({reason}) %{{y:,.2f}}"
+                               "<br>P&L %{customdata:+.1f} bps<br>%{x}<extra></extra>"),
+            ),
+            row=1, col=1,
+        )
+    # Trade paths: a single broken line from each entry to its exit.
+    seg_x: list = []
+    seg_y: list = []
+    for t in trades:
+        if t.entry_ts is None or t.exit_ts is None:
+            continue
+        seg_x.extend((t.entry_ts, t.exit_ts, None))
+        seg_y.extend((t.entry_price, t.exit_price, None))
+    if seg_x:
+        fig.add_trace(
+            go.Scatter(
+                x=seg_x, y=seg_y, mode="lines", name="trade path",
+                line=dict(color="rgba(148,148,148,0.45)", width=1), hoverinfo="skip",
+            ),
+            row=1, col=1,
+        )
+
 
 def build_chart(
     df: pd.DataFrame,
-    signals: list[Signal],
+    signals: Optional[list[Signal]] = None,
     title: str = "BTCUSDT Strategy Signals",
     save_path: Optional[str] = None,
     show_volume: bool = True,
     auto_refresh: int = 0,
+    trades: Optional[list[Trade]] = None,
 ) -> go.Figure:
     """Build a candlestick chart with signal overlays; return the Plotly figure.
 
@@ -222,34 +293,38 @@ def build_chart(
                 col=1,
             )
 
-    # ── Batched signal markers ─────────────────────────────────────────────
-    grouped: dict[tuple, list[Signal]] = defaultdict(list)
-    for sig in signals:
-        key = (sig.action, sig.direction)
-        grouped[key].append(sig)
+    # ── Trade / signal markers ─────────────────────────────────────────────
+    # Prefer `trades` when given: exit markers coloured by reason (P&L on hover)
+    # + entry→exit path lines. Otherwise fall back to the plain signal markers.
+    if trades:
+        _add_trade_markers(fig, trades)
+    elif signals:
+        grouped: dict[tuple, list[Signal]] = defaultdict(list)
+        for sig in signals:
+            grouped[(sig.action, sig.direction)].append(sig)
 
-    for key, sigs in grouped.items():
-        style = _MARKER_STYLES.get(key, _MARKER_STYLES[(SignalAction.EXIT, Direction.LONG)])
-        name = f"{key[1].value.capitalize()} {key[0].value.capitalize()}"
-        fig.add_trace(
-            go.Scatter(
-                x=[s.timestamp for s in sigs],
-                y=[s.price for s in sigs],
-                mode="markers+text",
-                marker=dict(
-                    symbol=style["symbol"],
-                    size=12,
-                    color=style["color"],
-                    line=dict(width=1.5, color="black"),
+        for key, sigs in grouped.items():
+            style = _MARKER_STYLES.get(key, _MARKER_STYLES[(SignalAction.EXIT, Direction.LONG)])
+            name = f"{key[1].value.capitalize()} {key[0].value.capitalize()}"
+            fig.add_trace(
+                go.Scatter(
+                    x=[s.timestamp for s in sigs],
+                    y=[s.price for s in sigs],
+                    mode="markers+text",
+                    marker=dict(
+                        symbol=style["symbol"],
+                        size=12,
+                        color=style["color"],
+                        line=dict(width=1.5, color="black"),
+                    ),
+                    text=[s.label for s in sigs],
+                    textposition=style["textpos"],
+                    textfont=dict(size=8),
+                    name=name,
                 ),
-                text=[s.label for s in sigs],
-                textposition=style["textpos"],
-                textfont=dict(size=8),
-                name=name,
-            ),
-            row=1,
-            col=1,
-        )
+                row=1,
+                col=1,
+            )
 
     # ── Volume ─────────────────────────────────────────────────────────────
     if show_volume and "volume" in df.columns:
