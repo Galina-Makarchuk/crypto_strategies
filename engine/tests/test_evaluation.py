@@ -18,7 +18,7 @@ from engine.strategies import EMACrossoverStrategy
 from engine.strategy_configurator import StrategyConfig
 from engine.trade_configurator import TradingConfig
 from engine.evaluation import (
-    sweep, walk_forward, monte_carlo, metrics_from_trades, equity_curve,
+    sweep, walk_forward, monte_carlo, metrics_from_trades, equity_curve, grid_search,
 )
 
 
@@ -141,6 +141,46 @@ def test_walk_forward_needs_enough_bars():
     with pytest.raises(ValueError):
         walk_forward(EMACrossoverStrategy, _df(100), {"ema_fast": [5]},
                      train_bars=400, test_bars=200)
+
+
+# ── grid search (all dimensions) ─────────────────────────────────────────────
+
+
+def test_grid_search_cross_product_and_columns():
+    df = _df()
+    loader = lambda spec: df          # ignore spec → same synthetic frame
+    out = grid_search(
+        EMACrossoverStrategy,
+        strategy_grid={"ema_fast": [5, 9], "ema_slow": [20, 30]},
+        trade_grid={"leverage": [1.0, 2.0]},
+        exit_grid=[None, "fixed_2pct_rr3"],
+        loader=loader,
+    )
+    assert len(out) == 2 * 2 * 2 * 2          # strat(4) × trade(2) × exit(2)
+    for col in ("ema_fast", "ema_slow", "leverage", "exit",
+                "total_pnl_bps", "total_return_pct", "final_equity", "sharpe_approx"):
+        assert col in out.columns
+
+
+def test_grid_search_pnl_bps_is_sizing_invariant():
+    df = _df()
+    loader = lambda spec: df
+    out = grid_search(
+        EMACrossoverStrategy,
+        strategy_grid={"ema_fast": [9]},
+        trade_grid={"leverage": [1.0, 3.0]},
+        loader=loader,
+    )
+    assert out["trades"].iloc[0] > 0
+    # same signals, different leverage: bps P&L unchanged, equity return scales with leverage
+    assert out["total_pnl_bps"].nunique() == 1
+    assert out["total_return_pct"].nunique() == 2
+
+
+def test_grid_search_rejects_unknown_field():
+    with pytest.raises(ValueError):
+        grid_search(EMACrossoverStrategy, trade_grid={"not_a_field": [1]},
+                    loader=lambda spec: _df(200))
 
 
 # ── Monte Carlo ──────────────────────────────────────────────────────────────

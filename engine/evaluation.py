@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import dataclasses
 import itertools
+import logging
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -41,6 +42,8 @@ from .backtester import Backtester
 from .core import Trade
 from .strategy_configurator import StrategyConfig
 from .trade_configurator import TradingConfig
+
+logger = logging.getLogger(__name__)
 
 
 # ── metrics ──────────────────────────────────────────────────────────────────
@@ -162,6 +165,104 @@ def sweep(
             "max_drawdown_bps": res.max_drawdown_bps,
             "sharpe_approx": res.sharpe_approx,
         })
+    return pd.DataFrame(rows)
+
+
+# ── full grid search across all four dimensions ──────────────────────────────
+
+
+def grid_search(
+    strategy_cls,
+    *,
+    strategy_grid: dict[str, list] | None = None,
+    trade_grid: dict[str, list] | None = None,
+    exit_grid: list | None = None,
+    data_grid: dict[str, list] | None = None,
+    base_config: StrategyConfig | None = None,
+    base_trading: TradingConfig | None = None,
+    base_data=None,
+    loader=None,
+) -> pd.DataFrame:
+    """Cartesian product across **all four** config dimensions at once.
+
+    Each grid is optional — omit one and that dimension stays fixed at its base:
+
+    * ``strategy_grid`` — :class:`StrategyConfig` fields → applied to ``base_config``.
+    * ``trade_grid``    — :class:`TradingConfig` fields → applied to ``base_trading``.
+    * ``data_grid``     — :class:`~engine.data_configurator.DataSpec` fields →
+      applied to ``base_data``; each distinct spec is loaded **once** (cached).
+    * ``exit_grid``     — a list whose items are an ``EXIT_PRESETS`` name (str), an
+      :class:`~engine.exits.ExitPolicy` instance, or ``None`` (strategy default).
+
+    Returns one row per combination: the varied params + metrics, sortable to find
+    the most profitable mix. **Note:** ``pnl_bps`` is sizing-invariant, so when you
+    sweep *trade* knobs (leverage / sizing) rank by ``total_return_pct`` /
+    ``final_equity`` — ``total_pnl_bps`` will not move.
+    """
+    from .data_configurator import ACTIVE, load_data           # lazy: avoid import cost when unused
+    from .strategy_configurator import EXIT_PRESETS
+
+    base_config = base_config or StrategyConfig()
+    base_trading = base_trading or TradingConfig()
+    base_data = base_data or ACTIVE
+    loader = loader or load_data         # callable(DataSpec) -> df; injectable for tests / custom feeds
+
+    def _validate(grid, proto, what):
+        for k in (grid or {}):
+            if not hasattr(proto, k):
+                raise ValueError(f"{k!r} is not a {what} field")
+
+    _validate(strategy_grid, base_config, "StrategyConfig")
+    _validate(trade_grid, base_trading, "TradingConfig")
+    _validate(data_grid, base_data, "DataSpec")
+
+    def _combos(base, grid):
+        if not grid:
+            return [({}, base)]
+        keys = list(grid)
+        return [(dict(zip(keys, vals)), dataclasses.replace(base, **dict(zip(keys, vals))))
+                for vals in itertools.product(*(grid[k] for k in keys))]
+
+    def _exit_combos():
+        if exit_grid is None:
+            return [(None, None)]
+        out = []
+        for e in exit_grid:
+            if e is None:
+                out.append(("default", None))
+            elif isinstance(e, str):
+                out.append((e, EXIT_PRESETS[e]()))
+            else:
+                out.append((type(e).__name__, e))
+        return out
+
+    data_combos, strat_combos = _combos(base_data, data_grid), _combos(base_config, strategy_grid)
+    trade_combos, exit_combos = _combos(base_trading, trade_grid), _exit_combos()
+    total = len(data_combos) * len(strat_combos) * len(trade_combos) * len(exit_combos)
+    logger.info("grid_search: %d combinations (data %d × strategy %d × trade %d × exit %d)",
+                total, len(data_combos), len(strat_combos), len(trade_combos), len(exit_combos))
+
+    rows = []
+    for d_params, spec in data_combos:
+        df = loader(spec)                                      # one load per dataset (cached)
+        for s_params, scfg in strat_combos:
+            for t_params, tcfg in trade_combos:
+                for exit_label, exit_pol in exit_combos:
+                    res = Backtester(_instantiate(strategy_cls, scfg, exit_pol),
+                                     symbol=spec.symbol, trading_config=tcfg).run(
+                        df, interval=spec.interval)
+                    rows.append({
+                        **d_params, **s_params, **t_params,
+                        **({"exit": exit_label} if exit_grid is not None else {}),
+                        "trades": res.total_trades,
+                        "win_rate": res.win_rate,
+                        "total_pnl_bps": res.total_pnl_bps,
+                        "profit_factor": res.profit_factor,
+                        "max_drawdown_bps": res.max_drawdown_bps,
+                        "sharpe_approx": res.sharpe_approx,
+                        "total_return_pct": res.total_return_pct,
+                        "final_equity": res.final_equity,
+                    })
     return pd.DataFrame(rows)
 
 
