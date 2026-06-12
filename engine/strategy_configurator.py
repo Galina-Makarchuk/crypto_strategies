@@ -23,8 +23,12 @@ exits → core`` with no cycle.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
+from .core import StrategyName
+
+logger = logging.getLogger(__name__)
 from .exits import (
     AtrStop,
     ChandelierStop,
@@ -218,6 +222,125 @@ class StrategyConfig:
     ml_p_threshold: float = 0.55
     ml_use_stop: bool = True  # toggle only; trail distance = PER_STRATEGY_EXIT preset (chandelier_3atr)
 
+    def __post_init__(self) -> None:
+        """Validate signal knobs at construction.
+
+        Mirrors ``TradingConfig.__post_init__`` (trade_configurator.py): a bad
+        edit — here, in a notebook ``dataclasses.replace``, or in an
+        ``evaluation.sweep`` grid — fails loudly at build time rather than
+        silently producing NaN indicators or empty signals downstream. Runs even
+        on a frozen dataclass (it only reads + raises, never assigns). ``bool``
+        is excluded from the int/number checks because ``bool`` subclasses
+        ``int`` and the boolean knobs are validated by being left alone.
+        """
+        def _bad(name: str, req: str) -> None:
+            raise ValueError(
+                f"StrategyConfig.{name}={getattr(self, name)!r} is invalid: must be {req}"
+            )
+
+        def _is_int(v) -> bool:
+            return isinstance(v, int) and not isinstance(v, bool)
+
+        def _is_num(v) -> bool:
+            return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+        # Positive ints (>= 1): periods, lookbacks, windows, counts, EMA spans.
+        for name in (
+            "atr_period", "ema_fast", "ema_slow", "rsi_period", "supertrend_period",
+            "ema_touch_period", "ema_touch_atr_period", "left", "right",
+            "level_pivot_window", "level_invalidation_candles", "level_atr_period",
+            "exhaustion_push_min_len", "exhaustion_stall_min_count",
+            "exhaustion_stall_max_len", "exhaustion_trigger_min_len",
+            "exhaustion_time_stop_bars", "exhaustion_invalidation_len",
+            "flag_min_cluster", "flag_max_cluster", "flag_breakout_window",
+            "flag_ema_fast", "flag_vol_sma", "flag_body_sma",
+            "flag_ema_slope_lookback", "flag_htf_minutes", "flag_htf_ema",
+            "flag_htf_slope_lookback", "ob_consecutive_min", "ob_htf_minutes",
+            "ob_htf_ema", "ob_ema_fast", "ob_ema_slow", "swing_zz_atr_period",
+            "swing_zz_min_bars_between", "swing_zz_vol_lookback",
+        ):
+            if not (_is_int(getattr(self, name)) and getattr(self, name) >= 1):
+                _bad(name, "a positive int (>= 1)")
+
+        # Optional positive ints: None disables the knob, else >= 1.
+        for name in (
+            "ema_touch_period_long", "ema_touch_period_short",
+            "ema_touch_regime_filter", "ema_touch_regime_filter_long",
+            "ema_touch_regime_filter_short",
+        ):
+            v = getattr(self, name)
+            if v is not None and not (_is_int(v) and v >= 1):
+                _bad(name, "None or a positive int (>= 1)")
+
+        # Non-negative ints (cooldown bars, 0 = no cooldown).
+        for name in ("swing_bounce_min_bars_between_trades",
+                     "swing_breakout_min_bars_between_trades"):
+            if not (_is_int(getattr(self, name)) and getattr(self, name) >= 0):
+                _bad(name, "a non-negative int (>= 0)")
+
+        # Strictly positive numbers: multipliers, ratios and windows that
+        # must be > 0 to mean anything.
+        for name in (
+            "supertrend_mult", "ema_touch_delta", "merge_tolerance",
+            "exhaustion_volume_factor", "exhaustion_target_rr", "flag_body_mult",
+            "flag_vol_mult", "flag_min_rr", "flag_t1_r", "flag_t2_r",
+            "flag_level_lookback_hours", "ob_body_mult", "ob_consecutive_range_pct",
+            "ob_max_age_hours", "ob_rr", "swing_zz_min_prominence_atr",
+        ):
+            if not (_is_num(getattr(self, name)) and getattr(self, name) > 0):
+                _bad(name, "a positive number (> 0)")
+
+        # Non-negative numbers: buffers, stop distances and scores (0 allowed).
+        for name in (
+            "level_delta", "level_breakout_buffer_atr", "level_stop_atr_mult",
+            "exhaustion_stop_atr_mult", "flag_level_proximity_pct",
+            "flag_stop_atr_mult", "flag_bar_tick", "ob_stop_buffer_pct",
+            "swing_zz_min_score", "swing_bounce_test_tolerance_atr",
+            "swing_bounce_stop_atr_mult", "swing_breakout_buffer_atr",
+            "swing_breakout_stop_atr_mult",
+        ):
+            if not (_is_num(getattr(self, name)) and getattr(self, name) >= 0):
+                _bad(name, "a non-negative number (>= 0)")
+
+        # RSI / ADX thresholds and structural ratios: non-negative only. These
+        # deliberately have NO upper bound and NO cross-field ordering — sweeps
+        # must be free to try any magnitude (e.g. ema_fast >= ema_slow,
+        # rsi_bullish=200, flag_min_cluster > flag_max_cluster, a >1 ratio).
+        # Only negatives are rejected; a degenerate-but-harmless combo just
+        # produces no signals.
+        for name in ("rsi_bullish", "rsi_bearish", "adx_threshold",
+                     "flag_close_pos_min", "flag_cluster_body_ratio",
+                     "flag_cluster_range_ratio", "flag_retrace_limit"):
+            if not (_is_num(getattr(self, name)) and getattr(self, name) >= 0):
+                _bad(name, "a non-negative number (>= 0)")
+
+        # ml_p_threshold is the one exception: it's a probability compared
+        # against a model score in [0, 1], so a value outside [0, 1] can never
+        # trigger. Everything else is free-range per the groups above.
+        if not (_is_num(self.ml_p_threshold) and 0 <= self.ml_p_threshold <= 1):
+            _bad("ml_p_threshold", "a probability in [0, 1]")
+
+        # Categorical knobs.
+        for name in ("ema_touch_delta_mode", "level_delta_mode"):
+            if getattr(self, name) not in ("absolute", "percent", "atr"):
+                _bad(name, "one of 'absolute' | 'percent' | 'atr'")
+
+        # VWAP bands: a non-empty tuple of positive multiples, with the entry
+        # band a valid index into it.
+        if not self.vwap_band_devs:
+            _bad("vwap_band_devs", "a non-empty tuple of band multiples")
+        if any(not _is_num(d) or d <= 0 for d in self.vwap_band_devs):
+            _bad("vwap_band_devs", "a tuple of positive band multiples")
+        if not (_is_int(self.vwap_entry_band)
+                and 0 <= self.vwap_entry_band < len(self.vwap_band_devs)):
+            _bad("vwap_entry_band", f"an index in [0, {len(self.vwap_band_devs)})")
+
+        # Non-empty path / session strings.
+        if not (isinstance(self.ml_model_path, str) and self.ml_model_path):
+            _bad("ml_model_path", "a non-empty path string")
+        if not (isinstance(self.vwap_session, str) and self.vwap_session):
+            _bad("vwap_session", "a non-empty session string")
+
 
 # ════════════════════════════════════════════════════════════════════════════
 # Section 2 — Strategy exits (per strategy)
@@ -337,6 +460,57 @@ EXIT_PRESETS: dict[str, "callable[[], ExitPolicy]"] = {
 #   EXIT_PRESETS[…]                           → look up that key's factory (the lambda).
 #   ()                                        → call it to build a brand-new ExitPolicy.
 def exit_policy_for(strategy_name: str) -> ExitPolicy:
-    """Build the exit policy assigned to a strategy (its override, else the
-    global default). Called by BaseStrategy to seed self.exit_policy."""
-    return EXIT_PRESETS[PER_STRATEGY_EXIT.get(strategy_name, DEFAULT_EXIT)]()
+    """Build the exit policy assigned to a strategy. Called by BaseStrategy to
+    seed self.exit_policy.
+
+    Every *real* strategy (a StrategyName member) is guaranteed to be listed in
+    PER_STRATEGY_EXIT by _validate_exit_catalog() below — so the only way to
+    reach the DEFAULT_EXIT fallback here is an ad-hoc / experimental / test
+    strategy whose name is not in the enum. That fallback is intentional (a
+    prototype shouldn't need a catalog entry to run) but is logged at WARNING so
+    it is never silent.
+    """
+    key = PER_STRATEGY_EXIT.get(strategy_name)
+    if key is None:
+        logger.warning(
+            "Strategy %r has no PER_STRATEGY_EXIT entry; using DEFAULT_EXIT (%s). "
+            "Add it to PER_STRATEGY_EXIT to assign a specific exit.",
+            strategy_name, DEFAULT_EXIT,
+        )
+        key = DEFAULT_EXIT
+    return EXIT_PRESETS[key]()
+
+
+def _validate_exit_catalog() -> None:
+    """Fail at import if the exit catalog is internally inconsistent — so a typo
+    in PER_STRATEGY_EXIT or a forgotten new strategy is caught here, not at the
+    runtime moment a strategy is first instantiated.
+
+    Checks: (1) DEFAULT_EXIT resolves; (2) every PER_STRATEGY_EXIT value is a
+    real EXIT_PRESETS key; (3) PER_STRATEGY_EXIT covers exactly the StrategyName
+    enum (no missing strategy, no stale/typo'd key).
+    """
+    if DEFAULT_EXIT not in EXIT_PRESETS:
+        raise ValueError(
+            f"DEFAULT_EXIT {DEFAULT_EXIT!r} is not a key in EXIT_PRESETS "
+            f"{sorted(EXIT_PRESETS)}"
+        )
+    bad = {name: key for name, key in PER_STRATEGY_EXIT.items()
+           if key not in EXIT_PRESETS}
+    if bad:
+        raise ValueError(
+            f"PER_STRATEGY_EXIT maps to unknown EXIT_PRESETS keys: {bad}. "
+            f"Known presets: {sorted(EXIT_PRESETS)}"
+        )
+    names = {s.value for s in StrategyName}
+    mapped = set(PER_STRATEGY_EXIT)
+    missing, unknown = names - mapped, mapped - names
+    if missing or unknown:
+        raise ValueError(
+            "PER_STRATEGY_EXIT must list exactly the StrategyName members. "
+            f"Missing (add an exit for these): {sorted(missing)}. "
+            f"Unknown (not a strategy): {sorted(unknown)}."
+        )
+
+
+_validate_exit_catalog()

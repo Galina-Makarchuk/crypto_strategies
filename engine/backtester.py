@@ -121,7 +121,12 @@ class Backtester:
             max_daily_loss_bps=tc.max_daily_loss_bps,
         )
 
-    def run(self, df: pd.DataFrame, interval: str = "15") -> BacktestResult:
+    def run(
+        self,
+        df: pd.DataFrame,
+        interval: str = "15",
+        audit_lookahead: bool = False,
+    ) -> BacktestResult:
         logger.info("Running backtest: %s on %d bars …", self.strategy.name, len(df))
         warn_if_inverse_gated(self.strategy.name, self.trading_config)
 
@@ -131,12 +136,19 @@ class Backtester:
         state = self._new_state()
         max_hold = self.trading_config.max_holding_bars
 
+        # The on_bar contract is "may only read df.iloc[0..i]". audit_lookahead
+        # *enforces* it: each bar sees a view truncated to [0..i], so reading a
+        # future row raises (or changes results) instead of silently peeking.
+        # Off by default (slicing per bar has a cost); the no-look-ahead test
+        # turns it on and asserts the trades are identical to a normal run.
+
         # Feed bars one at a time. open_bar tracks the index where the current
         # trade opened, so the max-holding overlay can force a time-stop.
         open_bar: int | None = None
         prev_counter = state._trade_counter
         for i in range(len(prepared)):
-            self.strategy.on_bar(i, prepared, state)
+            view = prepared.iloc[: i + 1] if audit_lookahead else prepared
+            self.strategy.on_bar(i, view, state)
 
             if state.current_trade is not None:
                 if state._trade_counter != prev_counter:  # a new trade just opened

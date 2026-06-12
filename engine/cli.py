@@ -18,7 +18,7 @@ import logging
 import sys
 
 from .backtester import Backtester
-from .data_configurator import LIVE_DIR, DataSpec, load_data, save_result
+from .data_configurator import ACTIVE, LIVE_DIR, DataSpec, load_data, save_result
 from .live import LiveEngine
 from .core import VALID_CATEGORIES, VALID_INTERVALS, StrategyName
 from .strategy_configurator import EXIT_PRESETS, StrategyConfig
@@ -80,6 +80,22 @@ def _build_trading_config(args) -> TradingConfig:
     return dataclasses.replace(ACTIVE_TRADE, **overrides)
 
 
+def _build_data_spec(args) -> DataSpec:
+    """Start from the ACTIVE DataSpec and override only the dataset flags the
+    user explicitly passed (anything still ``_UNSET`` inherits ACTIVE). Mirrors
+    _build_trading_config so the CLI and notebooks can't silently diverge on
+    which candles they load. dataclasses.replace re-runs DataSpec validation."""
+    overrides = {}
+    for arg_name, field in (
+        ("symbol", "symbol"), ("interval", "interval"), ("category", "category"),
+        ("candles", "num_candles"), ("start", "start"), ("end", "end"),
+    ):
+        val = getattr(args, arg_name)
+        if val is not _UNSET:
+            overrides[field] = val
+    return dataclasses.replace(ACTIVE, **overrides)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Bybit BTCUSDT Professional Trading Strategies",
@@ -96,38 +112,45 @@ def main(argv: list[str] | None = None) -> int:
         choices=["historical", "live"],
         default="historical",
     )
+    # ── Dataset (DataSpec) ─────────────────────────────────────────────────
+    # Like the trade flags below, these default to the ACTIVE DataSpec block in
+    # data_configurator.py — an omitted flag inherits ACTIVE (see _UNSET), so
+    # editing ACTIVE changes CLI runs too and ACTIVE stays the single source of
+    # truth across notebooks AND the CLI. A passed flag overrides only its field.
     parser.add_argument(
         "--symbol",
-        default="BTCUSDT",
-        help="Trading pair (default: BTCUSDT)",
+        default=_UNSET,
+        help="Trading pair (default: inherit ACTIVE.symbol)",
     )
     parser.add_argument(
         "--interval",
-        default="15",
+        default=_UNSET,
         choices=sorted(VALID_INTERVALS),
-        help="Candle interval (default: 15)",
+        help="Candle interval (default: inherit ACTIVE.interval)",
     )
     parser.add_argument(
         "--candles",
         type=int,
-        default=800,
-        help="Number of historical candles (default: 800; ignored when --start is set)",
+        default=_UNSET,
+        help="Number of historical candles (default: inherit ACTIVE.num_candles; "
+             "ignored when --start is set)",
     )
     parser.add_argument(
         "--category",
-        default="linear",
+        default=_UNSET,
         choices=sorted(VALID_CATEGORIES),
-        help="Bybit product type (default: linear)",
+        help="Bybit product type (default: inherit ACTIVE.category)",
     )
     parser.add_argument(
         "--start",
-        default=None,
-        help="Historical range start, ISO e.g. 2026-03-20 (range mode; --candles ignored)",
+        default=_UNSET,
+        help="Historical range start, ISO e.g. 2026-03-20 (range mode; --candles "
+             "ignored). Default: inherit ACTIVE.start",
     )
     parser.add_argument(
         "--end",
-        default=None,
-        help="Historical range end, ISO (defaults to now)",
+        default=_UNSET,
+        help="Historical range end, ISO (defaults to now). Default: inherit ACTIVE.end",
     )
     parser.add_argument(
         "--save",
@@ -247,28 +270,21 @@ def main(argv: list[str] | None = None) -> int:
     exit_policy = EXIT_PRESETS[args.exit_preset]() if args.exit_preset else None
     strategy = _build_strategy(args.strategy, config, exit_policy=exit_policy)
     trading_config = _build_trading_config(args)
+    spec = _build_data_spec(args)
 
     if args.mode == "historical":
-        return _run_historical(strategy, trading_config, args)
+        return _run_historical(strategy, trading_config, spec, args)
     else:
-        return _run_live(strategy, trading_config, args)
+        return _run_live(strategy, trading_config, spec, args)
 
 
-def _run_historical(strategy, trading_config, args) -> int:
+def _run_historical(strategy, trading_config, spec, args) -> int:
     # Pull candles through the shared cache (data/ohlcv/…) — the same source of
     # truth notebooks use, so repeat runs are instant and datasets stay identical.
-    spec = DataSpec(
-        symbol=args.symbol,
-        interval=args.interval,
-        category=args.category,
-        num_candles=args.candles,
-        start=args.start,
-        end=args.end,
-    )
     df = load_data(spec)
 
-    bt = Backtester(strategy, symbol=args.symbol, trading_config=trading_config)
-    result = bt.run(df, interval=args.interval)
+    bt = Backtester(strategy, symbol=spec.symbol, trading_config=trading_config)
+    result = bt.run(df, interval=spec.interval)
 
     # Print summary
     print(result.summary())
@@ -287,7 +303,7 @@ def _run_historical(strategy, trading_config, args) -> int:
     build_chart(
         prepared,
         signals,
-        title=f"{args.symbol} {args.interval} | {strategy.name} | {result.total_trades} trades",
+        title=f"{spec.symbol} {spec.interval} | {strategy.name} | {result.total_trades} trades",
         save_path=str(chart_path),
     )
     print(f"Chart saved to {chart_path}")
@@ -295,20 +311,20 @@ def _run_historical(strategy, trading_config, args) -> int:
     return 0
 
 
-def _run_live(strategy, trading_config, args) -> int:
+def _run_live(strategy, trading_config, spec, args) -> int:
     # Live artifacts (chart + SQLite state) are anchored under data/live/ (never the
     # cwd) and keyed by strategy so separate live runs don't clobber each other.
     # --save / --db override with explicit paths.
     chart_path = args.save or (
-        LIVE_DIR / f"{args.symbol}_{args.interval}_{strategy.name}.html"
+        LIVE_DIR / f"{spec.symbol}_{spec.interval}_{strategy.name}.html"
     )
     db_path = args.db or (LIVE_DIR / f"{strategy.name}.db")
     engine = LiveEngine(
         strategy=strategy,
-        symbol=args.symbol,
-        interval=args.interval,
-        category=args.category,
-        num_candles=args.candles,
+        symbol=spec.symbol,
+        interval=spec.interval,
+        category=spec.category,
+        num_candles=spec.num_candles,
         poll_seconds=args.poll,
         chart_path=str(chart_path),
         db_path=str(db_path),
