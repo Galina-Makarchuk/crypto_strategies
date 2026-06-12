@@ -354,8 +354,8 @@ class WalkForwardResult:
             f"  OOS max DD (bps)   : {m['max_drawdown_bps']:.1f}",
             f"  OOS Sharpe (approx): {m['sharpe_approx']:.2f}",
             f"  {'─' * 40}",
-            f"  Σ in-sample  P&L (bps): {is_pnl:+.1f}",
-            f"  Σ out-of-sample (bps) : {oos_sum:+.1f}",
+            f"  Σ in-sample      P&L (bps): {is_pnl:+.1f}",
+            f"  Σ out-of-sample  P&L (bps): {oos_sum:+.1f}",
         ]
         # WF efficiency = OOS P&L / IS P&L, meaningful only when the in-sample
         # optimisation actually found a profitable config (IS P&L > 0).
@@ -367,8 +367,9 @@ class WalkForwardResult:
             lines.append(
                 "  WF efficiency (OOS/IS): n/a   "
                 "(in-sample best was unprofitable — no edge to carry over)")
-        # USD view of the same stitched OOS track record — 1× full-fraction
-        # compounding (no leverage / position sizing), matching .equity_curve().
+        # USD view of the same stitched OOS track record — each trade compounds
+        # the whole balance at 1× (no leverage / position sizing), matching
+        # .equity_curve() so this and the plotted curve agree.
         eq = self.equity_curve(self.initial_equity)
         final_equity = float(eq.iloc[-1])
         net_profit = final_equity - self.initial_equity
@@ -376,7 +377,7 @@ class WalkForwardResult:
         max_dd_pct = float(((eq.cummax() - eq) / eq.cummax()).max() * 100.0) if len(eq) else 0.0
         lines += [
             f"  {'─' * 40}",
-            "  OOS equity (1× full-fraction compounding):",
+            "  OOS equity (compounded, full balance per trade, no leverage):",
             f"  Initial balance    : ${self.initial_equity:,.2f}",
             f"  Final balance      : ${final_equity:,.2f}",
             f"  Net profit         : ${net_profit:+,.2f}",

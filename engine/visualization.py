@@ -94,14 +94,16 @@ def _add_trade_markers(fig: go.Figure, trades: list[Trade]) -> None:
                 x=[t.exit_ts for t in ts], y=[t.exit_price for t in ts],
                 mode="markers+text", name=f"exit: {reason}",
                 marker=dict(symbol="x", size=10, color=color, line=dict(width=1, color=color)),
-                # P = profitable trade, L = losing trade — coloured for an at-a-glance read.
-                text=["P" if t.pnl_bps > 0 else "L" for t in ts],
+                # P = profitable trade, L = losing trade — bold black for an at-a-glance read.
+                text=[f"<b>{'P' if t.pnl_bps > 0 else 'L'}</b>" for t in ts],
                 textposition="top center",
-                textfont=dict(size=11, color=["#16c784" if t.pnl_bps > 0 else "#e23636" for t in ts]),
-                customdata=[t.pnl_bps for t in ts],
+                textfont=dict(size=16, color="black"),
+                # customdata is 2-D ([[pnl]]) so the d3 format in the template is honoured
+                # — a flat 1-D list silently ignores ":+.2f" and dumps full precision.
+                customdata=[[round(t.pnl_bps, 2)] for t in ts],
                 hovertemplate=("%{x}"
                                f"<br>exit ({reason}) %{{y:,.2f}}"
-                               "<br>P&L %{customdata:+.2f} bps<extra></extra>"),
+                               "<br>P&L %{customdata[0]:+.2f} bps<extra></extra>"),
             ),
             row=1, col=1,
         )
@@ -117,7 +119,7 @@ def _add_trade_markers(fig: go.Figure, trades: list[Trade]) -> None:
         fig.add_trace(
             go.Scatter(
                 x=seg_x, y=seg_y, mode="lines", name="trade path",
-                line=dict(color="rgba(148,148,148,0.45)", width=1), hoverinfo="skip",
+                line=dict(color="rgba(148,148,148,0.9)", width=1.5), hoverinfo="skip",
             ),
             row=1, col=1,
         )
@@ -199,6 +201,7 @@ def build_chart(
                     mode="lines",
                     name=label,
                     line=dict(width=1, color=color),
+                    hovertemplate=f"{label}<br>%{{x}}<br>%{{y:,.2f}}<extra></extra>",
                 ),
                 row=1,
                 col=1,
@@ -346,7 +349,6 @@ def build_chart(
     # ── Layout ─────────────────────────────────────────────────────────────
     fig.update_layout(
         title=title,
-        template="plotly_white",
         height=900,
         xaxis_rangeslider_visible=False,
         showlegend=True,
@@ -432,7 +434,6 @@ def plot_levels(
 
     fig.update_layout(
         title=title or "Dynamic levels (red=resistance, green=support, orange=pullback)",
-        template="plotly_white",
         xaxis_rangeslider_visible=False,
         height=700,
     )
