@@ -40,6 +40,7 @@ class StrategyName(Enum):
     FRACTAL_BREAKOUT_INV = "fractal_breakout_inv"
     EMA_CROSS = "ema"
     EMA_CROSS_INV = "ema_inv"
+    EMA_CROSS_ADAPTIVE = "ema_adaptive"
     SUPERTREND = "supertrend"
     SUPERTREND_INV = "supertrend_inv"
     SUPERTREND_ADAPTIVE = "supertrend_adaptive"

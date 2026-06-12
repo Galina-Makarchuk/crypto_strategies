@@ -32,6 +32,17 @@ logger = logging.getLogger(__name__)
 _MAX_SIGNALS_KEPT = 500  # rolling window size
 _CIRCUIT_BREAKER_LIMIT = 10  # consecutive failures before stopping
 
+
+def _in_jupyter() -> bool:
+    """True only inside a Jupyter/VS Code kernel (ZMQInteractiveShell), where a
+    rich HTML link can be rendered. Terminal IPython and plain scripts → False."""
+    try:
+        from IPython import get_ipython  # noqa: PLC0415 (optional dep, lazy)
+        shell = get_ipython()
+        return shell is not None and shell.__class__.__name__ == "ZMQInteractiveShell"
+    except Exception:
+        return False
+
 # Bar length in minutes, used to convert a max-holding-bars overlay into a time
 # delta in live mode (mirrors data_configurator._INTERVAL_MINUTES).
 _INTERVAL_MINUTES: dict[str, int] = {
@@ -103,6 +114,7 @@ class LiveEngine:
             self.poll_seconds,
         )
         warn_if_inverse_gated(self.strategy.name, self.trading_config)
+        self._announce_chart()
 
         while self._running:
             try:
@@ -133,6 +145,22 @@ class LiveEngine:
             time.sleep(self.poll_seconds)
 
         self._cleanup()
+
+    def _announce_chart(self) -> None:
+        """Surface where the live chart lives so it's easy to find: a clickable
+        link inside a notebook, otherwise a ``file://`` URL in the logs (CLI).
+        The chart auto-refreshes every ``poll_seconds`` once the first tick
+        writes it."""
+        uri = Path(self.chart_path).resolve().as_uri()
+        label = f"{self.symbol} {self.interval}m {self.strategy.name}"
+        if _in_jupyter():
+            from IPython.display import display, HTML  # noqa: PLC0415 (optional dep, lazy)
+            display(HTML(
+                f'<a href="{uri}" target="_blank" rel="noopener">'
+                f'Open live chart — {label} ↗</a>'
+            ))
+        else:
+            logger.info("Live chart → %s", uri)
 
     def _tick(self) -> None:
         """Single iteration of the live loop."""

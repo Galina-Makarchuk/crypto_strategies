@@ -39,6 +39,7 @@ STRATEGIES = {
     "level_breakout_inv": S.InverseLevelBreakoutStrategy,
     "ema": S.EMACrossoverStrategy,
     "ema_inv": S.InverseEMACrossoverStrategy,
+    "ema_adaptive": S.AdaptiveEMACrossoverStrategy,
     "supertrend": S.SuperTrendStrategy,
     "supertrend_inv": S.InverseSuperTrendStrategy,
     "supertrend_adaptive": S.AdaptiveSuperTrendStrategy,

@@ -96,8 +96,9 @@ class EmaParams:
     rsi_bearish: float = 30.0
 
     EXITS: ClassVar[dict[str, str]] = {
-        "ema":     DEFAULT,             # chandelier_2atr
-        "ema_inv": "chandelier_2atr",
+        "ema":          DEFAULT,             # chandelier_2atr
+        "ema_inv":      "chandelier_2atr",
+        "ema_adaptive": DEFAULT,             # RSI regime switch; same ATR trail
     }
 
     def __post_init__(self) -> None:
@@ -526,6 +527,7 @@ EXIT_PRESETS: dict[str, "callable[[], ExitPolicy]"] = {
 PARAMS: dict[str, type] = {
     "ema": EmaParams,
     "ema_inv": EmaParams,
+    "ema_adaptive": EmaParams,
     "supertrend": SupertrendParams,
     "supertrend_inv": SupertrendParams,
     "supertrend_adaptive": SupertrendParams,

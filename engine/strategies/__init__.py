@@ -1,6 +1,7 @@
 from .base import BaseStrategy
 from .ema_cross import EMACrossoverStrategy
 from .ema_cross_inv import InverseEMACrossoverStrategy
+from .ema_cross_adaptive import AdaptiveEMACrossoverStrategy
 from .ema_touch import EmaTouchStrategy
 from .exhaustion_reversal import ExhaustionReversalStrategy
 from .impulse_flag import ImpulseFlagStrategy
@@ -24,6 +25,7 @@ __all__ = [
     "BaseStrategy",
     "EMACrossoverStrategy",
     "InverseEMACrossoverStrategy",
+    "AdaptiveEMACrossoverStrategy",
     "EmaTouchStrategy",
     "ExhaustionReversalStrategy",
     "ImpulseFlagStrategy",
