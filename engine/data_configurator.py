@@ -178,19 +178,23 @@ def save_result(
     result: BacktestResult,
     spec: DataSpec = ACTIVE,
     *,
+    name: str | None = None,
     results_dir: Path | str | None = None,
 ) -> Path:
     """Persist a backtest result under ``data/results/<dataset_signature>/``.
 
-    Writes two sibling files, both keyed by strategy name:
-      * ``<strategy>.json``       — summary metrics + run metadata + nested trades
+    Writes two sibling files, both keyed by ``name`` (defaults to the strategy
+    name; pass it to tag results by notebook — e.g. ``name="ema_rsi"`` so the
+    files say which notebook produced them, not just the bare strategy name):
+      * ``<name>.json``       — summary metrics + run metadata + nested trades
         (the result object is hierarchical, so JSON keeps it in one round-trippable
         file; non-finite floats like an all-wins profit factor become ``null`` so
         the file stays valid JSON).
-      * ``<strategy>_trades.csv`` — the flat trade log, for pandas/Excel.
+      * ``<name>_trades.csv`` — the flat trade log, for pandas/Excel.
 
     Returns the path to the JSON file.
     """
+    stem = name or result.strategy_name
     base = Path(results_dir) if results_dir is not None else RESULTS_DIR
     out_dir = base / dataset_signature(spec)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -227,14 +231,14 @@ def save_result(
         "trades": trades,
     }
 
-    json_path = out_dir / f"{result.strategy_name}.json"
+    json_path = out_dir / f"{stem}.json"
     json_path.write_text(json.dumps(payload, indent=2))
 
-    csv_path = out_dir / f"{result.strategy_name}_trades.csv"
+    csv_path = out_dir / f"{stem}_trades.csv"
     pd.DataFrame(trades, columns=_TRADE_COLUMNS).to_csv(csv_path, index=False)
 
     logger.info(
-        "Saved %s result (%d trades) to %s", result.strategy_name, len(trades), out_dir
+        "Saved %s result (%d trades) to %s", stem, len(trades), out_dir
     )
     return json_path
 
