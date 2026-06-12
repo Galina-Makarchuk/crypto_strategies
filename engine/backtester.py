@@ -57,12 +57,20 @@ class BacktestResult:
     trades: list[Trade] = field(default_factory=list)
 
     def summary(self) -> str:
+        durations = [
+            t.duration.total_seconds() / 60
+            for t in self.trades
+            if t.duration is not None
+        ]
+        avg_duration_min = sum(durations) / len(durations) if durations else 0.0
+        net_profit = self.final_equity - self.initial_equity
         lines = [
             f"{'═' * 60}",
             f"  Backtest Summary: {self.strategy_name}",
             f"  {self.symbol} | {self.interval} | {self.num_bars} bars",
             f"{'═' * 60}",
             f"  Total trades      : {self.total_trades}",
+            f"  Avg duration min  : {avg_duration_min:.1f}",
             f"  Suppressed entries : {self.suppressed_entries}  (blocked by direction/daily-loss gate)",
             f"  Win / Loss / BE    : {self.winning_trades} / {self.losing_trades} / {self.break_even_trades}",
             f"  Win rate           : {self.win_rate:.1%}",
@@ -74,9 +82,10 @@ class BacktestResult:
             f"  Max drawdown (bps) : {self.max_drawdown_bps:.1f}",
             f"  Sharpe (approx)    : {self.sharpe_approx:.2f}",
             f"  {'─' * 40}",
-            f"  Initial equity     : {self.initial_equity:,.2f}",
-            f"  Final equity       : {self.final_equity:,.2f}",
-            f"  Total return       : {self.total_return_pct:+.2f}%",
+            f"  Initial balance    : ${self.initial_equity:,.2f}",
+            f"  Final balance      : ${self.final_equity:,.2f}",
+            f"  Net profit         : ${net_profit:+,.2f}",
+            f"  Net return         : {self.total_return_pct:+.2f}%",
             f"  Max drawdown       : {self.max_drawdown_pct:.2f}%",
         ]
         if self.risk_sizing_fallbacks:

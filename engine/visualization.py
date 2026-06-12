@@ -78,7 +78,7 @@ def _add_trade_markers(fig: go.Figure, trades: list[Trade]) -> None:
                     mode="markers", name=name,
                     marker=dict(symbol=symbol, size=11, color=color,
                                 line=dict(width=1.2, color="black")),
-                    hovertemplate=f"{name.lower()} %{{y:,.2f}}<br>%{{x}}<extra></extra>",
+                    hovertemplate=f"%{{x}}<br>{name.lower()} %{{y:,.2f}}<extra></extra>",
                 ),
                 row=1, col=1,
             )
@@ -92,11 +92,16 @@ def _add_trade_markers(fig: go.Figure, trades: list[Trade]) -> None:
         fig.add_trace(
             go.Scatter(
                 x=[t.exit_ts for t in ts], y=[t.exit_price for t in ts],
-                mode="markers", name=f"exit: {reason}",
+                mode="markers+text", name=f"exit: {reason}",
                 marker=dict(symbol="x", size=10, color=color, line=dict(width=1, color=color)),
+                # P = profitable trade, L = losing trade — coloured for an at-a-glance read.
+                text=["P" if t.pnl_bps > 0 else "L" for t in ts],
+                textposition="top center",
+                textfont=dict(size=11, color=["#16c784" if t.pnl_bps > 0 else "#e23636" for t in ts]),
                 customdata=[t.pnl_bps for t in ts],
-                hovertemplate=(f"exit ({reason}) %{{y:,.2f}}"
-                               "<br>P&L %{customdata:+.1f} bps<br>%{x}<extra></extra>"),
+                hovertemplate=("%{x}"
+                               f"<br>exit ({reason}) %{{y:,.2f}}"
+                               "<br>P&L %{customdata:+.2f} bps<extra></extra>"),
             ),
             row=1, col=1,
         )
@@ -341,7 +346,7 @@ def build_chart(
     # ── Layout ─────────────────────────────────────────────────────────────
     fig.update_layout(
         title=title,
-        template="plotly_dark",
+        template="plotly_white",
         height=900,
         xaxis_rangeslider_visible=False,
         showlegend=True,
@@ -427,7 +432,7 @@ def plot_levels(
 
     fig.update_layout(
         title=title or "Dynamic levels (red=resistance, green=support, orange=pullback)",
-        template="plotly_dark",
+        template="plotly_white",
         xaxis_rangeslider_visible=False,
         height=700,
     )

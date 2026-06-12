@@ -256,11 +256,12 @@ def grid_search(
                         **({"exit": exit_label} if exit_grid is not None else {}),
                         "trades": res.total_trades,
                         "win_rate": res.win_rate,
-                        "total_pnl_bps": res.total_pnl_bps,
                         "profit_factor": res.profit_factor,
                         "max_drawdown_bps": res.max_drawdown_bps,
                         "sharpe_approx": res.sharpe_approx,
                         "total_return_pct": res.total_return_pct,
+                        "total_pnl_bps": res.total_pnl_bps,
+                        "net_profit_usd": res.final_equity - res.initial_equity,
                         "final_equity": res.final_equity,
                     })
     return pd.DataFrame(rows)
@@ -296,6 +297,7 @@ class WalkForwardResult:
     train_bars: int
     test_bars: int
     anchored: bool
+    initial_equity: float = 10_000.0
 
     def folds_frame(self) -> pd.DataFrame:
         return pd.DataFrame([{
@@ -312,6 +314,25 @@ class WalkForwardResult:
         return pd.DataFrame(
             [{"fold": f.fold, **f.best_params} for f in self.folds]
         ).set_index("fold")
+
+    def param_stability_summary(self) -> pd.DataFrame:
+        """Aggregate :meth:`param_stability` across folds — one row per swept knob.
+
+        ``nunique == 1`` means the optimiser locked onto the same value every
+        fold (rock-stable); a wide ``min..max`` / large ``std`` means the pick
+        jumped fold-to-fold → overfit-prone. ``mode`` is the most-chosen value.
+        ``std`` is population (ddof=0), so a single fold reads 0 rather than NaN;
+        the numeric columns are NaN for non-numeric params.
+        """
+        ps = self.param_stability()
+        num = ps.select_dtypes("number")
+        return pd.DataFrame({
+            "nunique": ps.nunique(),
+            "mode": ps.mode().iloc[0],
+            "min": num.min(),
+            "max": num.max(),
+            "std": num.std(ddof=0),
+        })
 
     def equity_curve(self, initial: float = 10_000.0) -> pd.Series:
         return equity_curve(self.oos_trades, initial)
@@ -346,6 +367,22 @@ class WalkForwardResult:
             lines.append(
                 "  WF efficiency (OOS/IS): n/a   "
                 "(in-sample best was unprofitable — no edge to carry over)")
+        # USD view of the same stitched OOS track record — 1× full-fraction
+        # compounding (no leverage / position sizing), matching .equity_curve().
+        eq = self.equity_curve(self.initial_equity)
+        final_equity = float(eq.iloc[-1])
+        net_profit = final_equity - self.initial_equity
+        ret_pct = (final_equity / self.initial_equity - 1.0) * 100.0 if self.initial_equity else 0.0
+        max_dd_pct = float(((eq.cummax() - eq) / eq.cummax()).max() * 100.0) if len(eq) else 0.0
+        lines += [
+            f"  {'─' * 40}",
+            "  OOS equity (1× full-fraction compounding):",
+            f"  Initial balance    : ${self.initial_equity:,.2f}",
+            f"  Final balance      : ${final_equity:,.2f}",
+            f"  Net profit         : ${net_profit:+,.2f}",
+            f"  Net return         : {ret_pct:+.2f}%",
+            f"  Max drawdown       : {max_dd_pct:.2f}%",
+        ]
         lines.append("═" * 60)
         return "\n".join(lines)
 
@@ -436,7 +473,7 @@ def walk_forward(
     return WalkForwardResult(
         folds=folds, oos_trades=oos_trades, metrics=metrics_from_trades(oos_trades),
         objective=objective, grid=grid, train_bars=train_bars, test_bars=test_bars,
-        anchored=anchored)
+        anchored=anchored, initial_equity=tc.initial_equity)
 
 
 def _coerce(value, grid_values):
