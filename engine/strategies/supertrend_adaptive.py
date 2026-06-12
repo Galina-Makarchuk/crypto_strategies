@@ -8,7 +8,7 @@ This avoids the main failure mode of each approach:
   - Normal SuperTrend bleeds in ranges (constant whipsaws)
   - Inverse SuperTrend bleeds in trends (fighting momentum)
 
-The ADX threshold (default 25) and lookback are configurable via StrategyConfig.
+The ADX threshold (default 25) and lookback are configurable via SupertrendParams.
 """
 
 from __future__ import annotations
@@ -19,14 +19,14 @@ from ..indicators import adx as calc_adx
 from ..indicators import atr as calc_atr
 from ..indicators import supertrend as calc_supertrend
 from ..core import Direction, ExitReason, PositionState
-from ..strategy_configurator import StrategyConfig
+from ..strategy_configurator import SupertrendParams
 from .base import BaseStrategy
 
 
 class AdaptiveSuperTrendStrategy(BaseStrategy):
     name = "supertrend_adaptive"
 
-    def __init__(self, config: StrategyConfig, exit_policy=None):
+    def __init__(self, config: SupertrendParams, exit_policy=None):
         super().__init__(config, exit_policy)
         # Regime (trending vs ranging) captured at entry. The exit-flip side is
         # decided by THIS, not the current bar's regime, so a mid-trade ADX

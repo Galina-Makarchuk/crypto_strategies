@@ -5,8 +5,9 @@ Usage:
     python -m engine --strategy ema --mode live --interval 5 --poll 30
 
 The CLI only exposes trade-level knobs, not strategy params.
-StrategyConfig() is built with defaults (cli.py:236) — there are no --atr-period-style flags.
-So indicator/signal tuning still happens by editing StrategyConfig, 
+The strategy's params are built with defaults via params_for(name) — there are no
+--atr-period-style flags. So indicator/signal tuning happens by editing the
+per-strategy *Params classes in strategy_configurator.py,
 while the per-run flags cover TradingConfig (costs, sizing, direction, equity) plus --exit-preset.
 """
 
@@ -21,7 +22,7 @@ from .backtester import Backtester
 from .data_configurator import ACTIVE, LIVE_DIR, DataSpec, load_data, save_result
 from .live import LiveEngine
 from .core import VALID_CATEGORIES, VALID_INTERVALS, StrategyName
-from .strategy_configurator import EXIT_PRESETS, StrategyConfig
+from .strategy_configurator import EXIT_PRESETS, params_for
 from .trade_configurator import ACTIVE_TRADE, SizingMode, TradeDirection, TradingConfig
 from .strategies import AdaptiveSuperTrendStrategy, EMACrossoverStrategy, InverseEMACrossoverStrategy, EmaTouchStrategy, ExhaustionReversalStrategy, ImpulseFlagStrategy, InverseOrderBlockStrategy, InverseSuperTrendStrategy, SwingMLStrategy, OrderBlockStrategy, SuperTrendStrategy, FractalBreakoutStrategy, InverseFractalBreakoutStrategy, LevelBreakoutStrategy, InverseLevelBreakoutStrategy, SwingBounceStrategy, SwingBreakoutStrategy, SwingFlipStrategy, VWAPBandsStrategy
 from .visualization import build_chart
@@ -34,7 +35,7 @@ logger = logging.getLogger(__name__)
 _UNSET = object()
 
 
-def _build_strategy(name: str, config: StrategyConfig, exit_policy=None):
+def _build_strategy(name: str, config, exit_policy=None):
     strategies = {
         StrategyName.LEVEL_BREAKOUT.value: LevelBreakoutStrategy,
         StrategyName.LEVEL_BREAKOUT_INV.value: InverseLevelBreakoutStrategy,
@@ -266,7 +267,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         logging.getLogger().setLevel(getattr(logging, args.log_level))
 
-    config = StrategyConfig()
+    config = params_for(args.strategy)   # per-strategy defaults (single source of truth)
     exit_policy = EXIT_PRESETS[args.exit_preset]() if args.exit_preset else None
     strategy = _build_strategy(args.strategy, config, exit_policy=exit_policy)
     trading_config = _build_trading_config(args)

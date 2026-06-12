@@ -15,7 +15,7 @@ import pytest
 
 from engine.backtester import Backtester
 from engine.strategies import EMACrossoverStrategy
-from engine.strategy_configurator import StrategyConfig
+from engine.strategy_configurator import EmaParams
 from engine.trade_configurator import TradingConfig
 from engine.evaluation import (
     sweep, walk_forward, monte_carlo, metrics_from_trades, equity_curve, grid_search,
@@ -42,7 +42,7 @@ def _df(n: int = 1500) -> pd.DataFrame:
 
 def test_metrics_from_trades_matches_backtester():
     df = _df()
-    res = Backtester(EMACrossoverStrategy(StrategyConfig()),
+    res = Backtester(EMACrossoverStrategy(EmaParams()),
                      trading_config=TradingConfig()).run(df, interval="15")
     assert res.total_trades >= 2          # exercise the Sharpe branch
     m = metrics_from_trades(res.trades)
@@ -67,7 +67,7 @@ def test_metrics_from_trades_empty():
 
 def test_equity_curve_compounds():
     df = _df()
-    res = Backtester(EMACrossoverStrategy(StrategyConfig())).run(df, interval="15")
+    res = Backtester(EMACrossoverStrategy(EmaParams())).run(df, interval="15")
     eq = equity_curve(res.trades, initial=10_000.0)
     assert len(eq) == res.total_trades + 1
     assert eq.iloc[0] == 10_000.0
@@ -92,7 +92,7 @@ def test_sweep_grid_size_and_columns():
     # each row's metrics equal a direct backtest of that combo
     import dataclasses
     row = out.iloc[0]
-    cfg = dataclasses.replace(StrategyConfig(), ema_fast=int(row.ema_fast),
+    cfg = dataclasses.replace(EmaParams(), ema_fast=int(row.ema_fast),
                               ema_slow=int(row.ema_slow))
     direct = Backtester(EMACrossoverStrategy(cfg)).run(df, interval="15")
     assert row.total_pnl_bps == pytest.approx(direct.total_pnl_bps)
@@ -203,7 +203,7 @@ def test_monte_carlo_deterministic_and_bounded():
 
 def test_monte_carlo_accepts_trades():
     df = _df()
-    res = Backtester(EMACrossoverStrategy(StrategyConfig())).run(df, interval="15")
+    res = Backtester(EMACrossoverStrategy(EmaParams())).run(df, interval="15")
     mc = monte_carlo(res.trades, n_sims=500, block=4, seed=1)
     assert mc.n_trades == res.total_trades
 

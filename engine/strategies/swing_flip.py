@@ -21,7 +21,7 @@ import numpy as np
 import pandas as pd
 
 from ..core import Direction, ExitReason, PositionState
-from ..strategy_configurator import StrategyConfig
+from ..strategy_configurator import SwingParams
 from ..swing_detector import detect_swings, wilder_atr
 from .base import BaseStrategy
 

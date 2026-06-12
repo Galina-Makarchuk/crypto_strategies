@@ -47,7 +47,7 @@ import pandas as pd
 from ..core import PositionState
 from ..indicators import atr
 from ..level_detector import detect_all_levels
-from ..strategy_configurator import StrategyConfig
+from ..strategy_configurator import LevelParams
 from .base import BaseStrategy
 
 
@@ -57,7 +57,7 @@ class LevelStrategyBase(BaseStrategy):
     # Detector families used as the horizontal S/R set (pullback added by config).
     _BASE_FAMILIES = ("resistance", "support")
 
-    def __init__(self, config: StrategyConfig, exit_policy=None):
+    def __init__(self, config: LevelParams, exit_policy=None):
         super().__init__(config, exit_policy)
         # One tuple per detector level: (confirmation_idx, invalidated_at|None, price)
         self._levels: list[tuple[int, int | None, float]] = []

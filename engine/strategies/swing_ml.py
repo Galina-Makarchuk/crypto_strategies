@@ -43,7 +43,7 @@ from ..ml.labels import LABEL_HOLD, LABEL_LONG, LABEL_SHORT
 from ..ml.order_flow import OFI_FEATURE_COLUMNS
 from ..core import Direction, ExitReason, PositionState
 from ..exits import ExitPolicy
-from ..strategy_configurator import StrategyConfig
+from ..strategy_configurator import SwingMlParams
 from ..swing_detector import wilder_atr
 from .base import BaseStrategy
 
@@ -66,7 +66,7 @@ class SwingMLStrategy(BaseStrategy):
 
     def __init__(
         self,
-        config: StrategyConfig,
+        config: SwingMlParams,
         exit_policy: ExitPolicy | None = None,
         *,
         require_model: bool = True,

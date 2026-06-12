@@ -10,7 +10,6 @@ import pandas as pd
 
 from ..indicators import atr, ema, rsi
 from ..core import Direction, ExitReason, PositionState
-from ..strategy_configurator import StrategyConfig
 from .base import BaseStrategy
 
 

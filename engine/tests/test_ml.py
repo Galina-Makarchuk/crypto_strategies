@@ -158,13 +158,13 @@ class TestMLStrategySmoke:
 
     def test_strategy_loads_and_runs_backtest(self):
         from engine.backtester import Backtester
-        from engine.strategy_configurator import StrategyConfig
+        from engine.strategy_configurator import SwingMlParams
         from engine.strategies import SwingMLStrategy
 
         df = _make_ohlcv(600)
         model_path = self._train_dummy_model(df)
         try:
-            cfg = StrategyConfig(ml_model_path=str(model_path), ml_p_threshold=0.4)
+            cfg = SwingMlParams(ml_model_path=str(model_path), ml_p_threshold=0.4)
             strat = SwingMLStrategy(cfg)
             result = Backtester(strat, symbol="BTCUSDT").run(df, interval="15")
             assert result.num_bars == 600
@@ -174,10 +174,10 @@ class TestMLStrategySmoke:
             model_path.unlink(missing_ok=True)
 
     def test_missing_model_raises(self):
-        from engine.strategy_configurator import StrategyConfig
+        from engine.strategy_configurator import SwingMlParams
         from engine.strategies import SwingMLStrategy
 
-        cfg = StrategyConfig(ml_model_path="ml_models/does_not_exist.joblib")
+        cfg = SwingMlParams(ml_model_path="ml_models/does_not_exist.joblib")
         with pytest.raises(FileNotFoundError):
             SwingMLStrategy(cfg)
 
@@ -283,7 +283,7 @@ class TestOrderFlow:
             OFI_FEATURE_COLUMNS, aggregate_to_bars, compute_derived_orderflow,
             merge_orderflow_features,
         )
-        from engine.strategy_configurator import StrategyConfig
+        from engine.strategy_configurator import SwingMlParams
         from engine.strategies import SwingMLStrategy
 
         # 1) Synthetic klines (4 days, 15m) + synthetic trades over the same window.
@@ -321,7 +321,7 @@ class TestOrderFlow:
         tmp = Path(tempfile.mkstemp(suffix=".joblib")[1])
         try:
             _joblib.dump(bundle, tmp)
-            cfg = StrategyConfig(ml_model_path=str(tmp), ml_p_threshold=0.4)
+            cfg = SwingMlParams(ml_model_path=str(tmp), ml_p_threshold=0.4)
             strat = SwingMLStrategy(cfg)
             # df_with_ofi already has the OFI columns pre-merged.
             result = Backtester(strat, symbol="BTCUSDT").run(df_with_ofi, interval="15")
@@ -340,7 +340,7 @@ class TestOrderFlow:
 
         from engine.backtester import Backtester
         from engine.ml.features import FEATURE_COLUMNS_T3
-        from engine.strategy_configurator import StrategyConfig
+        from engine.strategy_configurator import SwingMlParams
         from engine.strategies import SwingMLStrategy
 
         # Use a real (tiny) fitted estimator so joblib can pickle it.
@@ -358,7 +358,7 @@ class TestOrderFlow:
         tmp = Path(tempfile.mkstemp(suffix=".joblib")[1])
         try:
             _joblib.dump(bundle, tmp)
-            cfg = StrategyConfig(ml_model_path=str(tmp), ml_p_threshold=0.4)
+            cfg = SwingMlParams(ml_model_path=str(tmp), ml_p_threshold=0.4)
             strat = SwingMLStrategy(cfg)
             df = _make_ohlcv(300)
             with pytest.raises(ValueError, match="order-flow"):

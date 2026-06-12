@@ -40,7 +40,7 @@ import pandas as pd
 
 from .backtester import Backtester
 from .core import Trade
-from .strategy_configurator import StrategyConfig
+from .strategy_configurator import params_for
 from .trade_configurator import TradingConfig
 
 logger = logging.getLogger(__name__)
@@ -116,7 +116,7 @@ def equity_curve(trades: list[Trade], initial: float = 10_000.0) -> pd.Series:
 # ── parameter sweep ──────────────────────────────────────────────────────────
 
 
-def _instantiate(strategy_cls, config: StrategyConfig, exit_policy):
+def _instantiate(strategy_cls, config, exit_policy):
     return strategy_cls(config, exit_policy=exit_policy)
 
 
@@ -128,26 +128,26 @@ def sweep(
     symbol: str = "BTCUSDT",
     interval: str = "15",
     trading_config: TradingConfig | None = None,
-    base_config: StrategyConfig | None = None,
+    base_config=None,
     exit_policy=None,
 ) -> pd.DataFrame:
     """Run the Cartesian product of ``grid`` through the real backtester.
 
-    ``grid`` maps :class:`StrategyConfig` field names to value lists, e.g.
+    ``grid`` maps the strategy's params-class field names to value lists, e.g.
     ``{"ema_fast": [5, 9, 13], "ema_slow": [21, 34]}``. Each combination is
     applied with :func:`dataclasses.replace` onto ``base_config`` (default
-    ``StrategyConfig()``), backtested, and reduced to one metrics row. Returns a
+    the strategy's default params), backtested, reduced to one metrics row. Returns a
     DataFrame with the param columns plus :data:`_METRIC_COLUMNS` —
     one row per combination (no filtering; callers rank/filter).
     """
-    base = base_config or StrategyConfig()
+    base = base_config if base_config is not None else params_for(strategy_cls.name)
     tc = trading_config or TradingConfig()
     keys = list(grid)
     if not keys:
         raise ValueError("grid must contain at least one parameter")
     for k in keys:
         if not hasattr(base, k):
-            raise ValueError(f"{k!r} is not a StrategyConfig field")
+            raise ValueError(f"{k!r} is not a {type(base).__name__} field")
 
     rows = []
     for combo in itertools.product(*(grid[k] for k in keys)):
@@ -178,7 +178,7 @@ def grid_search(
     trade_grid: dict[str, list] | None = None,
     exit_grid: list | None = None,
     data_grid: dict[str, list] | None = None,
-    base_config: StrategyConfig | None = None,
+    base_config=None,
     base_trading: TradingConfig | None = None,
     base_data=None,
     loader=None,
@@ -187,7 +187,7 @@ def grid_search(
 
     Each grid is optional — omit one and that dimension stays fixed at its base:
 
-    * ``strategy_grid`` — :class:`StrategyConfig` fields → applied to ``base_config``.
+    * ``strategy_grid`` — the strategy's params fields → applied to ``base_config``.
     * ``trade_grid``    — :class:`TradingConfig` fields → applied to ``base_trading``.
     * ``data_grid``     — :class:`~engine.data_configurator.DataSpec` fields →
       applied to ``base_data``; each distinct spec is loaded **once** (cached).
@@ -202,7 +202,7 @@ def grid_search(
     from .data_configurator import ACTIVE, load_data           # lazy: avoid import cost when unused
     from .strategy_configurator import EXIT_PRESETS
 
-    base_config = base_config or StrategyConfig()
+    base_config = base_config if base_config is not None else params_for(strategy_cls.name)
     base_trading = base_trading or TradingConfig()
     base_data = base_data or ACTIVE
     loader = loader or load_data         # callable(DataSpec) -> df; injectable for tests / custom feeds
@@ -212,7 +212,7 @@ def grid_search(
             if not hasattr(proto, k):
                 raise ValueError(f"{k!r} is not a {what} field")
 
-    _validate(strategy_grid, base_config, "StrategyConfig")
+    _validate(strategy_grid, base_config, type(base_config).__name__)
     _validate(trade_grid, base_trading, "TradingConfig")
     _validate(data_grid, base_data, "DataSpec")
 
@@ -360,7 +360,7 @@ def walk_forward(
     interval: str = "15",
     symbol: str = "BTCUSDT",
     trading_config: TradingConfig | None = None,
-    base_config: StrategyConfig | None = None,
+    base_config=None,
     exit_policy=None,
     objective: str = "total_pnl_bps",
     maximize: bool = True,
@@ -381,7 +381,7 @@ def walk_forward(
     Returns a :class:`WalkForwardResult` whose ``metrics`` summarise the stitched
     OOS trades — the honest, look-ahead-free track record.
     """
-    base = base_config or StrategyConfig()
+    base = base_config if base_config is not None else params_for(strategy_cls.name)
     tc = trading_config or TradingConfig()
     n = len(df)
     if train_bars <= 0 or test_bars <= 0:
@@ -441,7 +441,7 @@ def walk_forward(
 
 def _coerce(value, grid_values):
     """Cast a value pulled from a DataFrame back to the python type of the grid
-    (numpy.int64 → int, numpy.bool_ → bool) so it lands cleanly on StrategyConfig."""
+    (numpy.int64 → int, numpy.bool_ → bool) so it lands cleanly on the params class."""
     return type(grid_values[0])(value)
 
 

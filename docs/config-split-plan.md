@@ -1,6 +1,8 @@
 # Plan: split config into `strategy_configurator` + `trade_configurator`
 
-**Status:** proposed (not yet implemented) · **Date:** 2026-05-29 · Approval pending before any code.
+**Status:** ✅ implemented (both sides) · **Date:** 2026-05-29 (updated 2026-06-12).
+
+> **Update — what shipped.** Both halves are now live. The **trade side** is `trade_configurator.py` (`TradingConfig`/`ACTIVE_TRADE`: costs, sizing/equity, direction gate, leverage, daily-loss, max-holding). The **strategy side** went further than the sketch below: rather than keeping one `StrategyConfig` + a `PARAMS` *metadata* dict, the monolith was **split into one frozen `*Params` dataclass per strategy family** (`EmaParams`, `SupertrendParams`, …) in `engine/strategy_configurator.py`. Each class holds exactly its family's fields **plus** its default exit assignment (the `EXITS` ClassVar); a `PARAMS` registry maps every strategy name → its class; `params_for(name)` is the defaults source; `PER_STRATEGY_EXIT` is derived from the classes' `EXITS`. Field validation lives in `engine/config_validation.py` (shared by all configs via `__post_init__`). Net effect beyond the original goals: a foreign-knob override (`supertrend_mult` on an EMA strategy) now raises `TypeError` instead of being silently inert, and each family owns its own `atr_period`. The sections below are the original design and are kept for history.
 
 Splits the configurable surface into two orthogonal, centralized, extendable files:
 - **`strategy_configurator.py`** — *how signals are generated* (per-strategy params), consumed by strategies.

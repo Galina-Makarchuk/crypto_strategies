@@ -210,10 +210,10 @@ class TestEMACrossoverStrategy:
     def test_no_lookahead(self):
         """Strategy should produce same results regardless of future data."""
         from engine.core import PositionState
-        from engine.strategy_configurator import StrategyConfig
+        from engine.strategy_configurator import EmaParams
         from engine.strategies import EMACrossoverStrategy
 
-        config = StrategyConfig()
+        config = EmaParams()
         strat = EMACrossoverStrategy(config)
         df = _make_ohlcv(200, trend=0.5, noise=2.0)
 
@@ -240,10 +240,10 @@ class TestEMACrossoverStrategy:
 class TestSuperTrendStrategy:
     def test_entries_on_trend_flip(self):
         from engine.core import PositionState, SignalAction
-        from engine.strategy_configurator import StrategyConfig
+        from engine.strategy_configurator import SupertrendParams
         from engine.strategies import SuperTrendStrategy
 
-        config = StrategyConfig()
+        config = SupertrendParams()
         strat = SuperTrendStrategy(config)
         df = _make_ohlcv(300, trend=0.0, noise=3.0, seed=123)
 
@@ -310,10 +310,10 @@ class TestExhaustionReversalStrategy:
 
     def test_fires_short_on_crafted_pattern(self):
         from engine.core import Direction, PositionState, SignalAction
-        from engine.strategy_configurator import StrategyConfig
+        from engine.strategy_configurator import ExhaustionParams
         from engine.strategies import ExhaustionReversalStrategy
 
-        config = StrategyConfig(atr_period=5)  # small so warmup is short
+        config = ExhaustionParams(atr_period=5)  # small so warmup is short
         strat = ExhaustionReversalStrategy(config)
         df = self._crafted_pattern_df(warmup=10)
 
@@ -328,10 +328,10 @@ class TestExhaustionReversalStrategy:
 
     def test_backtest_runs_on_noise(self):
         from engine.backtester import Backtester
-        from engine.strategy_configurator import StrategyConfig
+        from engine.strategy_configurator import ExhaustionParams
         from engine.strategies import ExhaustionReversalStrategy
 
-        config = StrategyConfig()
+        config = ExhaustionParams()
         strat = ExhaustionReversalStrategy(config)
         df = _make_ohlcv(400, noise=2.0)
 
@@ -344,10 +344,10 @@ class TestExhaustionReversalStrategy:
 
     def test_no_lookahead(self):
         from engine.core import PositionState
-        from engine.strategy_configurator import StrategyConfig
+        from engine.strategy_configurator import ExhaustionParams
         from engine.strategies import ExhaustionReversalStrategy
 
-        config = StrategyConfig()
+        config = ExhaustionParams()
         df = _make_ohlcv(250, trend=0.1, noise=2.0, seed=9)
 
         strat_full = ExhaustionReversalStrategy(config)
@@ -398,10 +398,10 @@ class TestVWAPBandsStrategy:
 
     def test_backtest_runs_on_noise(self):
         from engine.backtester import Backtester
-        from engine.strategy_configurator import StrategyConfig
+        from engine.strategy_configurator import VwapParams
         from engine.strategies import VWAPBandsStrategy
 
-        config = StrategyConfig()
+        config = VwapParams()
         strat = VWAPBandsStrategy(config)
         df = _make_ohlcv(400, noise=3.0, seed=7)
 
@@ -413,10 +413,10 @@ class TestVWAPBandsStrategy:
 
     def test_no_lookahead(self):
         from engine.core import PositionState
-        from engine.strategy_configurator import StrategyConfig
+        from engine.strategy_configurator import VwapParams
         from engine.strategies import VWAPBandsStrategy
 
-        config = StrategyConfig()
+        config = VwapParams()
         df = _make_ohlcv(300, trend=0.05, noise=2.0, seed=3)
 
         strat_full = VWAPBandsStrategy(config)
@@ -482,10 +482,10 @@ class TestSwingsDetector:
 class TestSwingFlipStrategy:
     def test_backtest_runs_on_noise(self):
         from engine.backtester import Backtester
-        from engine.strategy_configurator import StrategyConfig
+        from engine.strategy_configurator import SwingParams
         from engine.strategies import SwingFlipStrategy
 
-        config = StrategyConfig(swing_zz_min_prominence_atr=1.0)
+        config = SwingParams(swing_zz_min_prominence_atr=1.0)
         strat = SwingFlipStrategy(config)
         df = _make_ohlcv(400, noise=3.0, seed=11)
 
@@ -497,10 +497,10 @@ class TestSwingFlipStrategy:
 
     def test_no_lookahead(self):
         from engine.core import PositionState
-        from engine.strategy_configurator import StrategyConfig
+        from engine.strategy_configurator import SwingParams
         from engine.strategies import SwingFlipStrategy
 
-        config = StrategyConfig(swing_zz_min_prominence_atr=1.0)
+        config = SwingParams(swing_zz_min_prominence_atr=1.0)
         df = _make_ohlcv(300, trend=0.05, noise=2.0, seed=4)
 
         strat_full = SwingFlipStrategy(config)
@@ -531,10 +531,10 @@ class TestSwingFlipStrategy:
 class TestBacktester:
     def test_backtest_runs(self):
         from engine.backtester import Backtester
-        from engine.strategy_configurator import StrategyConfig
+        from engine.strategy_configurator import SupertrendParams
         from engine.strategies import SuperTrendStrategy
 
-        config = StrategyConfig()
+        config = SupertrendParams()
         strat = SuperTrendStrategy(config)
         df = _make_ohlcv(200, noise=3.0)
 
@@ -548,13 +548,13 @@ class TestBacktester:
 
     def test_pnl_includes_costs(self):
         from engine.backtester import Backtester
-        from engine.strategy_configurator import StrategyConfig
+        from engine.strategy_configurator import EmaParams
         from engine.strategies import EMACrossoverStrategy
         from engine.trade_configurator import TradingConfig
 
         # Costs now live on TradingConfig and are seeded onto the state by the
         # backtester — strategies no longer carry them.
-        strat = EMACrossoverStrategy(StrategyConfig())
+        strat = EMACrossoverStrategy(EmaParams())
         df = _make_ohlcv(300, noise=2.0)
 
         cheap = Backtester(strat, trading_config=TradingConfig(fee_bps=0.0, slippage_bps=0.0))
@@ -576,7 +576,7 @@ class TestBacktester:
         """Build a Backtester + PositionState pre-loaded with synthetic closed trades."""
         from engine.backtester import Backtester
         from engine.core import Direction, ExitReason, PositionState, Trade
-        from engine.strategy_configurator import StrategyConfig
+        from engine.strategy_configurator import EmaParams
         from engine.strategies.base import BaseStrategy
 
         class _NullStrategy(BaseStrategy):
@@ -597,7 +597,7 @@ class TestBacktester:
                 exit_reason=ExitReason.TAKE_PROFIT,
                 peak_price=100.0 + max(pnl, 0),
             ))
-        bt = Backtester(_NullStrategy(StrategyConfig()))
+        bt = Backtester(_NullStrategy(EmaParams()))
         df = _make_ohlcv(10)
         return bt, state, df
 
@@ -649,7 +649,7 @@ class TestBacktester:
         """A strategy that opens but never exits should be force-closed by run()."""
         from engine.backtester import Backtester
         from engine.core import Direction, ExitReason, PositionState
-        from engine.strategy_configurator import StrategyConfig
+        from engine.strategy_configurator import EmaParams
         from engine.strategies.base import BaseStrategy
 
         class _EnterOnceStrategy(BaseStrategy):
@@ -660,7 +660,7 @@ class TestBacktester:
                 if i == 0 and state.current_trade is None:
                     state.enter(Direction.LONG, df.index[i], float(df["close"].iloc[i]))
 
-        bt = Backtester(_EnterOnceStrategy(StrategyConfig()))
+        bt = Backtester(_EnterOnceStrategy(EmaParams()))
         df = _make_ohlcv(20)
         result = bt.run(df, interval="15")
         assert result.total_trades == 1
@@ -750,11 +750,11 @@ class TestDailyLossHalt:
 class TestEquityLayer:
     def test_equity_compounds_and_fills_trade_fields(self):
         from engine.backtester import Backtester
-        from engine.strategy_configurator import StrategyConfig
+        from engine.strategy_configurator import SupertrendParams
         from engine.strategies import SuperTrendStrategy
         from engine.trade_configurator import TradingConfig
 
-        strat = SuperTrendStrategy(StrategyConfig())
+        strat = SuperTrendStrategy(SupertrendParams())
         df = _make_ohlcv(300, noise=3.0, seed=42)
         tc = TradingConfig(initial_equity=10_000.0, position_size_bps=10_000.0)
         result = Backtester(strat, trading_config=tc).run(df)
@@ -774,14 +774,14 @@ class TestEquityLayer:
     def test_bps_metrics_unchanged_by_equity_layer(self):
         """The equity layer is additive: bps P&L must not depend on sizing."""
         from engine.backtester import Backtester
-        from engine.strategy_configurator import StrategyConfig
+        from engine.strategy_configurator import SupertrendParams
         from engine.strategies import SuperTrendStrategy
         from engine.trade_configurator import TradingConfig
 
         df = _make_ohlcv(300, noise=3.0, seed=7)
-        a = Backtester(SuperTrendStrategy(StrategyConfig()),
+        a = Backtester(SuperTrendStrategy(SupertrendParams()),
                        trading_config=TradingConfig(initial_equity=1_000.0)).run(df)
-        b = Backtester(SuperTrendStrategy(StrategyConfig()),
+        b = Backtester(SuperTrendStrategy(SupertrendParams()),
                        trading_config=TradingConfig(initial_equity=500_000.0, leverage=3.0)).run(df)
         assert a.total_pnl_bps == pytest.approx(b.total_pnl_bps)
         assert a.total_trades == b.total_trades
@@ -791,7 +791,7 @@ class TestMaxHolding:
     def test_force_close_after_max_bars(self):
         from engine.backtester import Backtester
         from engine.core import Direction, ExitReason
-        from engine.strategy_configurator import StrategyConfig
+        from engine.strategy_configurator import EmaParams
         from engine.strategies.base import BaseStrategy
         from engine.trade_configurator import TradingConfig
 
@@ -805,7 +805,7 @@ class TestMaxHolding:
 
         df = _make_ohlcv(30)
         result = Backtester(
-            _EnterAndHold(StrategyConfig()), trading_config=TradingConfig(max_holding_bars=5)
+            _EnterAndHold(EmaParams()), trading_config=TradingConfig(max_holding_bars=5)
         ).run(df)
         assert result.total_trades == 1
         assert result.trades[0].exit_reason == ExitReason.TIME_STOP
@@ -874,14 +874,14 @@ class TestSuppressionObservable:
     def test_long_only_run_surfaces_suppressions(self):
         from engine.backtester import Backtester
         from engine.core import Direction
-        from engine.strategy_configurator import StrategyConfig
+        from engine.strategy_configurator import SupertrendParams
         from engine.strategies import SuperTrendStrategy
         from engine.trade_configurator import TradeDirection, TradingConfig
 
         df = _make_ohlcv(400, noise=3.0, seed=11)
-        both = Backtester(SuperTrendStrategy(StrategyConfig()),
+        both = Backtester(SuperTrendStrategy(SupertrendParams()),
                           trading_config=TradingConfig(direction=TradeDirection.BOTH)).run(df)
-        longonly = Backtester(SuperTrendStrategy(StrategyConfig()),
+        longonly = Backtester(SuperTrendStrategy(SupertrendParams()),
                               trading_config=TradingConfig(direction=TradeDirection.LONG)).run(df)
         assert both.suppressed_entries == 0
         assert all(t.direction == Direction.LONG for t in longonly.trades)
@@ -943,7 +943,7 @@ class TestRiskSizing:
         """A trade exiting at its stop should lose ≈ risk_per_trade_bps of equity."""
         from engine.backtester import Backtester
         from engine.core import Direction
-        from engine.strategy_configurator import StrategyConfig
+        from engine.strategy_configurator import EmaParams
         from engine.strategies.base import BaseStrategy
         from engine.trade_configurator import SizingMode, TradingConfig
 
@@ -964,7 +964,7 @@ class TestRiskSizing:
         )
         tc = TradingConfig(initial_equity=10_000.0, sizing_mode=SizingMode.RISK,
                            risk_per_trade_bps=100.0, fee_bps=0.0, slippage_bps=0.0)
-        res = Backtester(_StopOut(StrategyConfig()), trading_config=tc).run(df)
+        res = Backtester(_StopOut(EmaParams()), trading_config=tc).run(df)
         assert res.total_trades == 1
         t = res.trades[0]
         assert t.stop_price == pytest.approx(98.0)
@@ -978,7 +978,7 @@ class TestRiskSizing:
         # regardless of which strategies adopt stop-bearing exit policies.)
         from engine.backtester import Backtester
         from engine.core import Direction
-        from engine.strategy_configurator import StrategyConfig
+        from engine.strategy_configurator import EmaParams
         from engine.strategies.base import BaseStrategy
         from engine.trade_configurator import SizingMode, TradingConfig
 
@@ -992,7 +992,7 @@ class TestRiskSizing:
 
         df = _make_ohlcv(50)
         tc = TradingConfig(initial_equity=10_000.0, sizing_mode=SizingMode.RISK)
-        res = Backtester(_Stopless(StrategyConfig()), trading_config=tc).run(df)
+        res = Backtester(_Stopless(EmaParams()), trading_config=tc).run(df)
         assert res.total_trades == 1
         assert res.risk_sizing_fallbacks == res.total_trades   # no entry stop → fell back
         assert all(t.stop_price is None for t in res.trades)
@@ -1001,14 +1001,14 @@ class TestRiskSizing:
     def test_bps_unchanged_fixed_vs_risk(self):
         """Golden: sizing mode must not move the bps P&L."""
         from engine.backtester import Backtester
-        from engine.strategy_configurator import StrategyConfig
+        from engine.strategy_configurator import SupertrendParams
         from engine.strategies import SuperTrendStrategy
         from engine.trade_configurator import SizingMode, TradingConfig
 
         df = _make_ohlcv(300, noise=3.0, seed=9)
-        fixed = Backtester(SuperTrendStrategy(StrategyConfig()),
+        fixed = Backtester(SuperTrendStrategy(SupertrendParams()),
                            trading_config=TradingConfig(sizing_mode=SizingMode.FIXED)).run(df)
-        risk = Backtester(SuperTrendStrategy(StrategyConfig()),
+        risk = Backtester(SuperTrendStrategy(SupertrendParams()),
                           trading_config=TradingConfig(sizing_mode=SizingMode.RISK)).run(df)
         assert fixed.total_pnl_bps == pytest.approx(risk.total_pnl_bps)
         assert fixed.total_trades == risk.total_trades

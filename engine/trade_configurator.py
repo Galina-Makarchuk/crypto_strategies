@@ -9,8 +9,8 @@ genuinely the project-wide default, mirroring the ACTIVE dataset block in
 :mod:`engine.data_configurator`.
 
 Strategy-specific parameters (indicator periods, ATR/RR stops, etc.) stay on
-``StrategyConfig`` in :mod:`engine.core` — they describe *how signals are
-generated* and are not configured here.
+the per-family ``*Params`` classes in :mod:`engine.strategy_configurator` — they
+describe *how signals are generated* and are not configured here.
 
 Units: everything bps-denominated follows the engine convention — 1 bp = 0.01%,
 100 bps = 1%, 10_000 bps = 100%. Bybit quotes fees in %, so convert once on the
@@ -22,6 +22,8 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from enum import Enum
+
+from . import config_validation as cv
 
 logger = logging.getLogger(__name__)
 
@@ -73,20 +75,18 @@ class TradingConfig:
     direction: TradeDirection = TradeDirection.BOTH  # default = current behaviour
 
     def __post_init__(self) -> None:
-        if self.initial_equity <= 0:
-            raise ValueError("initial_equity must be positive.")
-        if self.position_size_bps <= 0:
-            raise ValueError("position_size_bps must be positive.")
-        if self.leverage <= 0:
-            raise ValueError("leverage must be positive.")
-        if self.risk_per_trade_bps <= 0:
-            raise ValueError("risk_per_trade_bps must be positive.")
-        if self.fee_bps < 0 or self.slippage_bps < 0:
-            raise ValueError("fee_bps and slippage_bps must be non-negative.")
-        if self.max_daily_loss_bps is not None and self.max_daily_loss_bps <= 0:
-            raise ValueError("max_daily_loss_bps must be positive when set.")
-        if self.max_holding_bars is not None and self.max_holding_bars <= 0:
-            raise ValueError("max_holding_bars must be a positive integer when set.")
+        # Validation rules delegated to config_validation (shared with the
+        # per-strategy *Params classes); the hook stays here so construction and
+        # dataclasses.replace both re-validate.
+        o = "TradingConfig"
+        cv.positive_number(o, "initial_equity", self.initial_equity)
+        cv.positive_number(o, "position_size_bps", self.position_size_bps)
+        cv.positive_number(o, "leverage", self.leverage)
+        cv.positive_number(o, "risk_per_trade_bps", self.risk_per_trade_bps)
+        cv.non_negative_number(o, "fee_bps", self.fee_bps)
+        cv.non_negative_number(o, "slippage_bps", self.slippage_bps)
+        cv.optional_positive_number(o, "max_daily_loss_bps", self.max_daily_loss_bps)
+        cv.optional_positive_int(o, "max_holding_bars", self.max_holding_bars)
 
     # ── Derived ──────────────────────────────────────────────────────────────
 

@@ -26,7 +26,7 @@ import pytest
 
 from engine import strategies as S
 from engine.backtester import Backtester
-from engine.strategy_configurator import StrategyConfig
+from engine.strategy_configurator import params_for
 from engine.trade_configurator import TradingConfig
 
 GOLDEN = pathlib.Path(__file__).parent / "golden_trades.json"
@@ -121,7 +121,7 @@ def _trades_of(result) -> list:
 
 
 def _impulse_signature() -> list:
-    strat = S.ImpulseFlagStrategy(StrategyConfig())
+    strat = S.ImpulseFlagStrategy(params_for("impulse_flag"))
     return _trades_of(Backtester(strat, trading_config=TradingConfig()).run(_impulse_df(), interval="5"))
 
 
@@ -135,7 +135,7 @@ def test_impulse_flag_crafted_parity():
 
 
 def _signature(strat_cls) -> list:
-    strat = strat_cls(StrategyConfig())
+    strat = strat_cls(params_for(strat_cls.name))   # per-strategy params; values unchanged
     result = Backtester(strat, trading_config=TradingConfig()).run(_golden_df(), interval="15")
     return [
         [

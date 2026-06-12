@@ -1,22 +1,29 @@
 """Single source of truth for *strategy-side* configuration.
 
 This is the strategy half of the config split (the trade half is
-``trade_configurator.py``). It is organised top-to-bottom into three sections:
+``trade_configurator.py``). It is organised top-to-bottom into four sections:
 
-  * **Section 1 — Strategy parameters (per strategy)**: :class:`StrategyConfig`,
-    *how signals are generated* (indicator periods, multipliers, structural
-    knobs), grouped strategy-by-strategy. The one field read across families
-    (``atr_period``) is declared once and tagged in each block that reads it.
-  * **Section 2 — Strategy exits (per strategy)**: which stop-loss / take-profit
-    preset each strategy uses (``PER_STRATEGY_EXIT``), all strategies listed.
+  * **Section 1 — Per-strategy parameter classes**: one small frozen dataclass
+    per strategy *family*, holding EXACTLY the signal knobs that family reads
+    (indicator periods, multipliers, structural levels) PLUS its default exit
+    assignment (the ``EXITS`` ClassVar). A foreign override (e.g.
+    ``supertrend_mult`` on an EMA strategy) therefore raises ``TypeError`` at
+    ``dataclasses.replace`` instead of landing silently inert, and each family
+    owns its own ``atr_period``. Field validation is delegated to
+    ``config_validation`` (the shared rule home).
+  * **Section 2 — Params registry + derived exit map**: ``PARAMS`` maps every
+    strategy name → its config class; ``PER_STRATEGY_EXIT`` is *derived* from
+    each class's ``EXITS`` (the central "glance view").
   * **Section 3 — Exit / take-profit policy catalog**: the reusable preset menu
-    (``EXIT_PRESETS``) + ``exit_policy_for()``, which resolves a strategy's
-    assigned preset into a fresh policy. ``BaseStrategy`` sets
-    ``self.exit_policy = exit_policy_for(self.name)``; the CLI's
-    ``--exit-preset`` can override it.
+    (``EXIT_PRESETS``) + ``exit_policy_for()``, which reads a strategy's assigned
+    preset live from its class ``EXITS``. ``BaseStrategy`` sets
+    ``self.exit_policy = exit_policy_for(self.name)``; the CLI's ``--exit-preset``
+    (and a notebook's ``EXIT_POLICY``) can override it.
+  * **Section 4 — Params accessors**: ``params_for(name)`` (default config for a
+    strategy) and ``params_class_for(name)`` (the class it expects).
 
 Import-graph note: this module may import ``exits`` (and therefore ``core``)
-but must NEVER import strategy classes — per-strategy assignment is keyed by the
+but must NEVER import strategy classes — per-strategy wiring is keyed by the
 string ``name``, so the arrow stays ``strategies → strategy_configurator →
 exits → core`` with no cycle.
 """
@@ -25,10 +32,10 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import ClassVar
 
+from . import config_validation as cv
 from .core import StrategyName
-
-logger = logging.getLogger(__name__)
 from .exits import (
     AtrStop,
     ChandelierStop,
@@ -42,66 +49,106 @@ from .exits import (
     FixedPctTarget,
 )
 
+logger = logging.getLogger(__name__)
+
+# Each strategy's default exit-preset assignment lives ON its config class (the
+# EXITS ClassVar), so a family's signal knobs and its exit sit together.
+# DEFAULT_EXIT is the shared fallback those maps lean on — defined up here so the
+# classes can reference it. The reusable preset menu (EXIT_PRESETS) + resolver
+# (exit_policy_for) stay central in Section 3; PER_STRATEGY_EXIT is derived from
+# the class maps in Section 2.
+DEFAULT_EXIT = "chandelier_2atr"   # global fallback for the trend/EMA/swing group
+DEFAULT = DEFAULT_EXIT             # readability alias for the no-override entries
+
 
 # ════════════════════════════════════════════════════════════════════════════
-# Section 1 — Strategy parameters (per strategy)
+# Section 1 — Per-strategy parameter classes
 # ════════════════════════════════════════════════════════════════════════════
-# Where you tune how signals are generated (indicator periods, multipliers,
-# structural levels). One frozen dataclass, fields grouped per strategy.
-#
-# NOTE: trade-level parameters (costs, sizing, direction, leverage, risk overlays)
-# intentionally do NOT live here — they describe *how you trade* any signal,
-# not how signals are generated. They live on TradingConfig in
-# engine/trade_configurator.py, are seeded onto PositionState by the runner,
-# and applied at exit (cost) / entry (direction + daily-loss gates).
+# One frozen dataclass per strategy family. Fields = exactly the knobs that
+# family reads. The `atr_period` knob is declared per-family (independent now);
+# families that carry their own ATR field (ema_touch / level / swing) do not.
+# Validation (Section: config_validation) rejects only genuinely invalid values
+# (negatives, zero where positive is required, bad categoricals, out-of-range
+# indices, empty required strings) — NO upper caps and NO cross-field ordering,
+# so sweeps roam freely (ema_fast >= ema_slow, big/small magnitudes, etc.).
 
+
+# ──────────────────────────────────────────────────────────────────────────────
+# EMA + RSI   ·   ema, ema_inv
+# ──────────────────────────────────────────────────────────────────────────────
 @dataclass(frozen=True)
-class StrategyConfig:
-    """Immutable strategy parameters.  All magic numbers live here."""
+class EmaParams:
+    """EMA crossover entries, optionally gated by an RSI momentum filter.
 
-    # ── Shared indicator period ──────────────────────────────────────────────
-    # atr_period is the one signal knob read across strategy families. It is
-    # declared once here (a frozen dataclass can't repeat a field name); every
-    # block that reads it is tagged "· shared: atr_period" below.
-    #   used by: ema, ema_inv, supertrend, supertrend_inv, supertrend_adaptive,
-    #            fractal_breakout, fractal_breakout_inv, exhaustion_reversal,
-    #            impulse_flag, order_block, order_block_inv  (11 strategies).
-    #   NB: level_*, swing_zz_*, and ema_touch carry their OWN atr-period fields
-    #       (level_atr_period / swing_zz_atr_period / ema_touch_atr_period) — see
-    #       those blocks; they are independent of this one.
-    #   The trend/EMA/swing trailing-stop *distance* is NOT a field — it lives in
-    #   the exit catalog (EXIT_PRESETS["chandelier_2atr"] = ChandelierStop(2.0)),
-    #   the single source of truth for that stop.
+    rsi_filter is the master on/off; when off, EMA crosses enter unfiltered. The
+    bounds gate by the *resulting entry direction* (not the cross), so the same
+    two knobs apply identically to the base and inverse strategies:
+      long  entries are skipped when rsi >= rsi_bullish (overbought)
+      short entries are skipped when rsi <= rsi_bearish (oversold)
+    """
+
     atr_period: int = 14
-
-    # ═══ EMA + RSI ═══  (ema, ema_inv)   · shared: atr_period
-    # EMA crossover entries, optionally gated by an RSI momentum filter.
     ema_fast: int = 9
     ema_slow: int = 21
-    # RSI — momentum filter on the EMA-cross entries. rsi_filter is the master
-    # on/off; when off, EMA crosses enter unfiltered. The bounds gate by the
-    # *resulting entry direction* (not the cross), so the same two knobs apply
-    # identically to the base and inverse strategies:
-    #   long  entries are skipped when rsi >= rsi_bullish (overbought)
-    #   short entries are skipped when rsi <= rsi_bearish (oversold)
     rsi_period: int = 14
     rsi_filter: bool = True
     rsi_bullish: float = 70.0
     rsi_bearish: float = 30.0
 
-    # ═══ SuperTrend ═══  (supertrend, supertrend_inv, supertrend_adaptive)   · shared: atr_period
+    EXITS: ClassVar[dict[str, str]] = {
+        "ema":     DEFAULT,             # chandelier_2atr
+        "ema_inv": "chandelier_2atr",
+    }
+
+    def __post_init__(self) -> None:
+        o = "EmaParams"
+        cv.positive_int(o, "atr_period", self.atr_period)
+        cv.positive_int(o, "ema_fast", self.ema_fast)
+        cv.positive_int(o, "ema_slow", self.ema_slow)
+        cv.positive_int(o, "rsi_period", self.rsi_period)
+        cv.non_negative_number(o, "rsi_bullish", self.rsi_bullish)
+        cv.non_negative_number(o, "rsi_bearish", self.rsi_bearish)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# SuperTrend   ·   supertrend, supertrend_inv, supertrend_adaptive
+# ──────────────────────────────────────────────────────────────────────────────
+@dataclass(frozen=True)
+class SupertrendParams:
+    """ATR volatility bands + trend direction. The adaptive variant uses an ADX
+    regime switch: ADX >= adx_threshold = trending (follow) else ranging (fade).
+    The ADX period reuses atr_period."""
+
+    atr_period: int = 14
     supertrend_period: int = 10
     supertrend_mult: float = 3.0
-    # Adaptive SuperTrend (supertrend_adaptive) regime switch: ADX >= adx_threshold
-    # = trending (follow the trend) else ranging (fade it). ADX period reuses atr_period.
     adx_threshold: float = 25.0
 
-    # ═══ EMA touch-and-rejection ═══  (ema_touch)
-    # Entry: a bar's wick touches the entry EMA within `delta` tolerance AND the
-    # bar closes back on the rejection side (long: close >= EMA; short: close <=
-    # EMA); optional slower-EMA regime gate. Stop/TP come from the exit policy
-    # (default preset fixed_1pct_rr3 = 1% stop + 3R target). Distinct from the
-    # `ema` crossover above. Ported from the ema project's backtest.py.
+    EXITS: ClassVar[dict[str, str]] = {
+        "supertrend": DEFAULT,
+        "supertrend_inv": DEFAULT,
+        "supertrend_adaptive": DEFAULT,
+    }
+
+    def __post_init__(self) -> None:
+        o = "SupertrendParams"
+        cv.positive_int(o, "atr_period", self.atr_period)
+        cv.positive_int(o, "supertrend_period", self.supertrend_period)
+        cv.positive_number(o, "supertrend_mult", self.supertrend_mult)
+        cv.non_negative_number(o, "adx_threshold", self.adx_threshold)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# EMA touch-and-rejection   ·   ema_touch
+# ──────────────────────────────────────────────────────────────────────────────
+@dataclass(frozen=True)
+class EmaTouchParams:
+    """A bar's wick touches the entry EMA within `delta` tolerance AND the bar
+    closes back on the rejection side (long: close >= EMA; short: close <= EMA);
+    optional slower-EMA regime gate. Stop/TP come from the exit policy (default
+    preset fixed_1pct_rr3 = 1% stop + 3R target). Distinct from the `ema`
+    crossover family. Carries its OWN atr period (ema_touch_atr_period)."""
+
     ema_touch_period: int = 50                      # entry EMA span (symmetric fallback)
     ema_touch_period_long: int | None = None        # per-side entry EMA override (None -> ema_touch_period)
     ema_touch_period_short: int | None = None
@@ -112,19 +159,63 @@ class StrategyConfig:
     ema_touch_regime_filter_long: int | None = None
     ema_touch_regime_filter_short: int | None = None
 
-    # ═══ Fractal breakout ═══  (fractal_breakout, fractal_breakout_inv)   · shared: atr_period
-    # N-bar fractal-pivot S/R detection via indicators.detect_swing_* +
-    # merge_price_levels. Distinct from the level_breakout detector below.
+    EXITS: ClassVar[dict[str, str]] = {
+        "ema_touch": "fixed_1pct_rr3",   # 1% fixed stop + 3R target (source default)
+    }
+
+    def __post_init__(self) -> None:
+        o = "EmaTouchParams"
+        cv.positive_int(o, "ema_touch_period", self.ema_touch_period)
+        cv.optional_positive_int(o, "ema_touch_period_long", self.ema_touch_period_long)
+        cv.optional_positive_int(o, "ema_touch_period_short", self.ema_touch_period_short)
+        cv.positive_number(o, "ema_touch_delta", self.ema_touch_delta)
+        cv.one_of(o, "ema_touch_delta_mode", self.ema_touch_delta_mode,
+                  ("absolute", "percent", "atr"))
+        cv.positive_int(o, "ema_touch_atr_period", self.ema_touch_atr_period)
+        cv.optional_positive_int(o, "ema_touch_regime_filter", self.ema_touch_regime_filter)
+        cv.optional_positive_int(o, "ema_touch_regime_filter_long", self.ema_touch_regime_filter_long)
+        cv.optional_positive_int(o, "ema_touch_regime_filter_short", self.ema_touch_regime_filter_short)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Fractal breakout   ·   fractal_breakout, fractal_breakout_inv
+# ──────────────────────────────────────────────────────────────────────────────
+@dataclass(frozen=True)
+class FractalParams:
+    """N-bar fractal-pivot S/R detection via indicators.detect_swing_* +
+    merge_price_levels. Distinct from the level_breakout detector."""
+
+    atr_period: int = 14
     left: int = 5
     right: int = 5
     merge_tolerance: float = 0.0015  # 0.15 %
 
-    # ═══ Level breakout ═══  (level_breakout, level_breakout_inv)
-    # Horizontal S/R from the dedicated engine.level_detector (stateful
-    # resistance/support/pullback levels seeded at confirmed pivots and tracked
-    # forward until invalidated). Distinct from the fractal_breakout knobs above.
-    # Family has room to grow (level_bounce / level_retest) on the shared pivot
-    # window. See engine/level_detector.py for the detector contract.
+    EXITS: ClassVar[dict[str, str]] = {
+        # DEFAULT preserves the byte-for-byte behaviour of the pre-rename
+        # level_breakout, which used this chandelier trail.
+        "fractal_breakout": DEFAULT,
+        "fractal_breakout_inv": DEFAULT,
+    }
+
+    def __post_init__(self) -> None:
+        o = "FractalParams"
+        cv.positive_int(o, "atr_period", self.atr_period)
+        cv.positive_int(o, "left", self.left)
+        cv.positive_int(o, "right", self.right)
+        cv.positive_number(o, "merge_tolerance", self.merge_tolerance)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Level breakout   ·   level_breakout, level_breakout_inv
+# ──────────────────────────────────────────────────────────────────────────────
+@dataclass(frozen=True)
+class LevelParams:
+    """Horizontal S/R from the dedicated engine.level_detector (stateful
+    resistance/support/pullback levels seeded at confirmed pivots and tracked
+    forward until invalidated). Distinct from the fractal_breakout detector.
+    Family has room to grow (level_bounce / level_retest) on the shared pivot
+    window. Carries its OWN atr period (level_atr_period)."""
+
     level_pivot_window: int = 3             # symmetric pivot window for all 3 families
     level_delta: float = 0.5                # invalidation tolerance magnitude; units set by level_delta_mode
     level_delta_mode: str = "atr"           # "absolute" (quote pts) | "percent" (% of level) | "atr" (×ATR)
@@ -134,7 +225,33 @@ class StrategyConfig:
     level_breakout_buffer_atr: float = 0.0  # close must clear the level by this ×ATR to trigger
     level_stop_atr_mult: float = 1.5        # level_breakout entry stop = broken level ∓ mult·ATR (structural)
 
-    # ═══ Exhaustion reversal ═══  (exhaustion_reversal)   · shared: atr_period
+    EXITS: ClassVar[dict[str, str]] = {
+        # structural stop anchored on the broken level (entry stop_price) + 2R;
+        # the inverse fades the breakout: ATR stop from entry + 2R (no level).
+        "level_breakout": "structural_rr2",
+        "level_breakout_inv": "atr_stop_rr2",
+    }
+
+    def __post_init__(self) -> None:
+        o = "LevelParams"
+        cv.positive_int(o, "level_pivot_window", self.level_pivot_window)
+        cv.non_negative_number(o, "level_delta", self.level_delta)
+        cv.one_of(o, "level_delta_mode", self.level_delta_mode,
+                  ("absolute", "percent", "atr"))
+        cv.positive_int(o, "level_invalidation_candles", self.level_invalidation_candles)
+        cv.positive_int(o, "level_atr_period", self.level_atr_period)
+        cv.non_negative_number(o, "level_breakout_buffer_atr", self.level_breakout_buffer_atr)
+        cv.non_negative_number(o, "level_stop_atr_mult", self.level_stop_atr_mult)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Exhaustion reversal   ·   exhaustion_reversal
+# ──────────────────────────────────────────────────────────────────────────────
+@dataclass(frozen=True)
+class ExhaustionParams:
+    """Push-leg → stall → trigger exhaustion reversal."""
+
+    atr_period: int = 14
     exhaustion_push_min_len: int = 2        # min |length| of the push-leg streak
     exhaustion_stall_min_count: int = 2     # min number of stall streaks after the push
     exhaustion_stall_max_len: int = 1       # max |length| of a stall streak
@@ -145,7 +262,33 @@ class StrategyConfig:
     exhaustion_time_stop_bars: int = 12     # force-exit after this many bars in trade
     exhaustion_invalidation_len: int = 3    # structural invalidation streak length
 
-    # ═══ Impulse + consolidation ("flag") ═══  (impulse_flag)   · shared: atr_period
+    EXITS: ClassVar[dict[str, str]] = {
+        "exhaustion_reversal": "structural",   # fixed structural stop + structural target
+    }
+
+    def __post_init__(self) -> None:
+        o = "ExhaustionParams"
+        cv.positive_int(o, "atr_period", self.atr_period)
+        cv.positive_int(o, "exhaustion_push_min_len", self.exhaustion_push_min_len)
+        cv.positive_int(o, "exhaustion_stall_min_count", self.exhaustion_stall_min_count)
+        cv.positive_int(o, "exhaustion_stall_max_len", self.exhaustion_stall_max_len)
+        cv.positive_int(o, "exhaustion_trigger_min_len", self.exhaustion_trigger_min_len)
+        cv.positive_number(o, "exhaustion_volume_factor", self.exhaustion_volume_factor)
+        cv.non_negative_number(o, "exhaustion_stop_atr_mult", self.exhaustion_stop_atr_mult)
+        cv.positive_number(o, "exhaustion_target_rr", self.exhaustion_target_rr)
+        cv.positive_int(o, "exhaustion_time_stop_bars", self.exhaustion_time_stop_bars)
+        cv.positive_int(o, "exhaustion_invalidation_len", self.exhaustion_invalidation_len)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Impulse + consolidation ("flag")   ·   impulse_flag
+# ──────────────────────────────────────────────────────────────────────────────
+@dataclass(frozen=True)
+class ImpulseFlagParams:
+    """Impulse leg → tight consolidation cluster → breakout, with HTF bias and
+    a two-target (T1/T2) trade manager."""
+
+    atr_period: int = 14
     flag_body_mult: float = 1.5             # impulse body >= mult * SMA(body)
     flag_vol_mult: float = 1.2              # impulse volume >= mult * SMA(vol)
     flag_close_pos_min: float = 2.0 / 3.0   # impulse close must sit in top/bottom third
@@ -174,7 +317,35 @@ class StrategyConfig:
     flag_be_shift_after_t1: bool = True      # move stop to BE once T1 is touched
     flag_bar_tick: float = 0.1               # trigger offset past the level
 
-    # ═══ Order block ═══  (order_block, order_block_inv)   · shared: atr_period
+    EXITS: ClassVar[dict[str, str]] = {
+        "impulse_flag": "structural",   # fixed structural stop + structural target
+    }
+
+    def __post_init__(self) -> None:
+        o = "ImpulseFlagParams"
+        for name in ("atr_period", "flag_min_cluster", "flag_max_cluster",
+                     "flag_breakout_window", "flag_ema_fast", "flag_vol_sma",
+                     "flag_body_sma", "flag_ema_slope_lookback", "flag_htf_minutes",
+                     "flag_htf_ema", "flag_htf_slope_lookback"):
+            cv.positive_int(o, name, getattr(self, name))
+        for name in ("flag_body_mult", "flag_vol_mult", "flag_level_lookback_hours",
+                     "flag_min_rr", "flag_t1_r", "flag_t2_r"):
+            cv.positive_number(o, name, getattr(self, name))
+        for name in ("flag_close_pos_min", "flag_cluster_body_ratio",
+                     "flag_cluster_range_ratio", "flag_retrace_limit",
+                     "flag_level_proximity_pct", "flag_stop_atr_mult", "flag_bar_tick"):
+            cv.non_negative_number(o, name, getattr(self, name))
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Order block   ·   order_block, order_block_inv
+# ──────────────────────────────────────────────────────────────────────────────
+@dataclass(frozen=True)
+class OrderBlockParams:
+    """Impulse-origin order blocks with an HTF bias filter and an LTF EMA-cross
+    confirmation."""
+
+    atr_period: int = 14
     ob_body_mult: float = 1.8                # impulse body >= mult * ATR
     ob_consecutive_min: int = 3              # min same-direction candle run
     ob_consecutive_range_pct: float = 0.006  # combined body / close threshold
@@ -186,246 +357,135 @@ class StrategyConfig:
     ob_stop_buffer_pct: float = 0.005        # stop buffer beyond OB extreme
     ob_rr: float = 2.5                       # fixed reward:risk on target
 
-    # ═══ VWAP stdev bands ═══  (vwap_bands)
-    # defaults mirror the TradingView "v2 Mod" preset
+    EXITS: ClassVar[dict[str, str]] = {
+        "order_block": "structural",
+        "order_block_inv": "structural",
+    }
+
+    def __post_init__(self) -> None:
+        o = "OrderBlockParams"
+        cv.positive_int(o, "atr_period", self.atr_period)
+        cv.positive_number(o, "ob_body_mult", self.ob_body_mult)
+        cv.positive_int(o, "ob_consecutive_min", self.ob_consecutive_min)
+        cv.positive_number(o, "ob_consecutive_range_pct", self.ob_consecutive_range_pct)
+        cv.positive_number(o, "ob_max_age_hours", self.ob_max_age_hours)
+        cv.positive_int(o, "ob_htf_minutes", self.ob_htf_minutes)
+        cv.positive_int(o, "ob_htf_ema", self.ob_htf_ema)
+        cv.positive_int(o, "ob_ema_fast", self.ob_ema_fast)
+        cv.positive_int(o, "ob_ema_slow", self.ob_ema_slow)
+        cv.non_negative_number(o, "ob_stop_buffer_pct", self.ob_stop_buffer_pct)
+        cv.positive_number(o, "ob_rr", self.ob_rr)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# VWAP stdev bands   ·   vwap_bands
+# ──────────────────────────────────────────────────────────────────────────────
+@dataclass(frozen=True)
+class VwapParams:
+    """Session-anchored VWAP with stdev bands. Defaults mirror the TradingView
+    'v2 Mod' preset. Stopless: exits when the close reverts to the VWAP mean."""
+
     vwap_band_devs: tuple[float, ...] = (1.28, 2.01, 2.51, 3.09, 4.01)
     vwap_session: str = "D"                  # session anchor for VWAP reset
     vwap_entry_band: int = 4                 # 0-indexed; default = furthest band
 
-    # ═══ Swing (ATR-prominence ZigZag) family ═══  (swing_flip, swing_bounce, swing_breakout, swing_ml)
-    # Shared ZigZag detection knobs — read by swing_flip / swing_bounce /
-    # swing_breakout. NOTE swing_ml does NOT read these (it hardcodes its own
-    # ATR); its knobs are the ml_* sub-block at the end. See engine/swing_detector.py.
+    EXITS: ClassVar[dict[str, str]] = {
+        "vwap_bands": "vwap_mean",   # close reverts to the VWAP mean (no stop)
+    }
+
+    def __post_init__(self) -> None:
+        o = "VwapParams"
+        if not self.vwap_band_devs:
+            cv.require(o, "vwap_band_devs", self.vwap_band_devs, False,
+                       "a non-empty tuple of band multiples")
+        if any(not cv._is_num(d) or d <= 0 for d in self.vwap_band_devs):
+            cv.require(o, "vwap_band_devs", self.vwap_band_devs, False,
+                       "a tuple of positive band multiples")
+        cv.require(o, "vwap_entry_band", self.vwap_entry_band,
+                   cv._is_int(self.vwap_entry_band)
+                   and 0 <= self.vwap_entry_band < len(self.vwap_band_devs),
+                   f"an index in [0, {len(self.vwap_band_devs)})")
+        cv.non_empty_str(o, "vwap_session", self.vwap_session)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Swing (ATR-prominence ZigZag)   ·   swing_flip, swing_bounce, swing_breakout
+# ──────────────────────────────────────────────────────────────────────────────
+@dataclass(frozen=True)
+class SwingParams:
+    """Shared ZigZag detection knobs (swing_zz_*) read by all three swing modes,
+    plus the bounce-/breakout-specific knobs. swing_ml does NOT use these — it
+    has its own SwingMlParams. See engine/swing_detector.py."""
+
     swing_zz_atr_period: int = 14
     swing_zz_min_prominence_atr: float = 1.5
     swing_zz_min_bars_between: int = 3
     swing_zz_vol_lookback: int = 50
     swing_zz_min_score: float = 0.0
-    # Swing flip (swing_flip): stop toggle only; trail distance lives in the
-    # PER_STRATEGY_EXIT preset (chandelier_3atr).
-    swing_zz_use_stop: bool = True
-    # Swing bounce (swing_bounce): mean-reversion off confirmed swing pivots
-    # (ported from the ema project's swing_strategy.py bounce mode). Reuses the
-    # shared swing_zz_* knobs above; these are bounce-specific.
+    swing_zz_use_stop: bool = True                      # swing_flip: stop toggle; trail = chandelier_3atr preset
+    # Swing bounce (swing_bounce): mean-reversion off confirmed swing pivots.
     swing_bounce_test_tolerance_atr: float = 0.5        # how close (in ATR) the wick must come to the swing level
     swing_bounce_require_close_rejection: bool = True   # bar must close back across the level
     swing_bounce_stop_atr_mult: float = 1.0             # entry stop = swing price ∓ mult·ATR (swing-anchored)
     swing_bounce_min_bars_between_trades: int = 0       # cooldown bars after an exit before re-entry
-    # Swing breakout (swing_breakout): continuation through confirmed swing pivots
-    # (ported from the ema project's swing_strategy.py breakout mode). Reuses swing_zz_*.
+    # Swing breakout (swing_breakout): continuation through confirmed swing pivots.
     swing_breakout_buffer_atr: float = 0.0              # close must clear the swing level by this many ATR
     swing_breakout_stop_atr_mult: float = 1.0           # entry stop = swing level ∓ mult·ATR (swing-anchored)
     swing_breakout_min_bars_between_trades: int = 0     # cooldown bars after an exit before re-entry
-    # Swing ML (swing_ml): ML swing-pivot classifier. Does NOT read swing_zz_*.
-    # ml_model_path is resolved relative to the repo root if not absolute.
-    ml_model_path: str = "ml_models/swing_zz_ml.joblib"
-    ml_p_threshold: float = 0.55
-    ml_use_stop: bool = True  # toggle only; trail distance = PER_STRATEGY_EXIT preset (chandelier_3atr)
+
+    EXITS: ClassVar[dict[str, str]] = {
+        "swing_flip": "chandelier_3atr",        # 3·ATR trail
+        "swing_bounce": "structural_rr2",       # swing-anchored stop (entry stop_price) + 2R
+        "swing_breakout": "structural_rr2",
+    }
 
     def __post_init__(self) -> None:
-        """Validate signal knobs at construction.
+        o = "SwingParams"
+        cv.positive_int(o, "swing_zz_atr_period", self.swing_zz_atr_period)
+        cv.positive_number(o, "swing_zz_min_prominence_atr", self.swing_zz_min_prominence_atr)
+        cv.positive_int(o, "swing_zz_min_bars_between", self.swing_zz_min_bars_between)
+        cv.positive_int(o, "swing_zz_vol_lookback", self.swing_zz_vol_lookback)
+        cv.non_negative_number(o, "swing_zz_min_score", self.swing_zz_min_score)
+        cv.non_negative_number(o, "swing_bounce_test_tolerance_atr", self.swing_bounce_test_tolerance_atr)
+        cv.non_negative_number(o, "swing_bounce_stop_atr_mult", self.swing_bounce_stop_atr_mult)
+        cv.non_negative_int(o, "swing_bounce_min_bars_between_trades", self.swing_bounce_min_bars_between_trades)
+        cv.non_negative_number(o, "swing_breakout_buffer_atr", self.swing_breakout_buffer_atr)
+        cv.non_negative_number(o, "swing_breakout_stop_atr_mult", self.swing_breakout_stop_atr_mult)
+        cv.non_negative_int(o, "swing_breakout_min_bars_between_trades", self.swing_breakout_min_bars_between_trades)
 
-        Mirrors ``TradingConfig.__post_init__`` (trade_configurator.py): a bad
-        edit — here, in a notebook ``dataclasses.replace``, or in an
-        ``evaluation.sweep`` grid — fails loudly at build time rather than
-        silently producing NaN indicators or empty signals downstream. Runs even
-        on a frozen dataclass (it only reads + raises, never assigns). ``bool``
-        is excluded from the int/number checks because ``bool`` subclasses
-        ``int`` and the boolean knobs are validated by being left alone.
-        """
-        def _bad(name: str, req: str) -> None:
-            raise ValueError(
-                f"StrategyConfig.{name}={getattr(self, name)!r} is invalid: must be {req}"
-            )
 
-        def _is_int(v) -> bool:
-            return isinstance(v, int) and not isinstance(v, bool)
+# ──────────────────────────────────────────────────────────────────────────────
+# Swing ML   ·   swing_ml
+# ──────────────────────────────────────────────────────────────────────────────
+@dataclass(frozen=True)
+class SwingMlParams:
+    """ML swing-pivot classifier. Does NOT read the swing_zz_* knobs (it hardcodes
+    its own ATR). ml_model_path is resolved relative to the repo root if not
+    absolute."""
 
-        def _is_num(v) -> bool:
-            return isinstance(v, (int, float)) and not isinstance(v, bool)
+    ml_model_path: str = "ml_models/swing_zz_ml.joblib"
+    ml_p_threshold: float = 0.55
+    ml_use_stop: bool = True   # toggle only; trail distance = its EXITS preset (chandelier_3atr)
 
-        # Positive ints (>= 1): periods, lookbacks, windows, counts, EMA spans.
-        for name in (
-            "atr_period", "ema_fast", "ema_slow", "rsi_period", "supertrend_period",
-            "ema_touch_period", "ema_touch_atr_period", "left", "right",
-            "level_pivot_window", "level_invalidation_candles", "level_atr_period",
-            "exhaustion_push_min_len", "exhaustion_stall_min_count",
-            "exhaustion_stall_max_len", "exhaustion_trigger_min_len",
-            "exhaustion_time_stop_bars", "exhaustion_invalidation_len",
-            "flag_min_cluster", "flag_max_cluster", "flag_breakout_window",
-            "flag_ema_fast", "flag_vol_sma", "flag_body_sma",
-            "flag_ema_slope_lookback", "flag_htf_minutes", "flag_htf_ema",
-            "flag_htf_slope_lookback", "ob_consecutive_min", "ob_htf_minutes",
-            "ob_htf_ema", "ob_ema_fast", "ob_ema_slow", "swing_zz_atr_period",
-            "swing_zz_min_bars_between", "swing_zz_vol_lookback",
-        ):
-            if not (_is_int(getattr(self, name)) and getattr(self, name) >= 1):
-                _bad(name, "a positive int (>= 1)")
+    EXITS: ClassVar[dict[str, str]] = {
+        "swing_ml": "chandelier_3atr",
+    }
 
-        # Optional positive ints: None disables the knob, else >= 1.
-        for name in (
-            "ema_touch_period_long", "ema_touch_period_short",
-            "ema_touch_regime_filter", "ema_touch_regime_filter_long",
-            "ema_touch_regime_filter_short",
-        ):
-            v = getattr(self, name)
-            if v is not None and not (_is_int(v) and v >= 1):
-                _bad(name, "None or a positive int (>= 1)")
-
-        # Non-negative ints (cooldown bars, 0 = no cooldown).
-        for name in ("swing_bounce_min_bars_between_trades",
-                     "swing_breakout_min_bars_between_trades"):
-            if not (_is_int(getattr(self, name)) and getattr(self, name) >= 0):
-                _bad(name, "a non-negative int (>= 0)")
-
-        # Strictly positive numbers: multipliers, ratios and windows that
-        # must be > 0 to mean anything.
-        for name in (
-            "supertrend_mult", "ema_touch_delta", "merge_tolerance",
-            "exhaustion_volume_factor", "exhaustion_target_rr", "flag_body_mult",
-            "flag_vol_mult", "flag_min_rr", "flag_t1_r", "flag_t2_r",
-            "flag_level_lookback_hours", "ob_body_mult", "ob_consecutive_range_pct",
-            "ob_max_age_hours", "ob_rr", "swing_zz_min_prominence_atr",
-        ):
-            if not (_is_num(getattr(self, name)) and getattr(self, name) > 0):
-                _bad(name, "a positive number (> 0)")
-
-        # Non-negative numbers: buffers, stop distances and scores (0 allowed).
-        for name in (
-            "level_delta", "level_breakout_buffer_atr", "level_stop_atr_mult",
-            "exhaustion_stop_atr_mult", "flag_level_proximity_pct",
-            "flag_stop_atr_mult", "flag_bar_tick", "ob_stop_buffer_pct",
-            "swing_zz_min_score", "swing_bounce_test_tolerance_atr",
-            "swing_bounce_stop_atr_mult", "swing_breakout_buffer_atr",
-            "swing_breakout_stop_atr_mult",
-        ):
-            if not (_is_num(getattr(self, name)) and getattr(self, name) >= 0):
-                _bad(name, "a non-negative number (>= 0)")
-
-        # RSI / ADX thresholds and structural ratios: non-negative only. These
-        # deliberately have NO upper bound and NO cross-field ordering — sweeps
-        # must be free to try any magnitude (e.g. ema_fast >= ema_slow,
-        # rsi_bullish=200, flag_min_cluster > flag_max_cluster, a >1 ratio).
-        # Only negatives are rejected; a degenerate-but-harmless combo just
-        # produces no signals.
-        for name in ("rsi_bullish", "rsi_bearish", "adx_threshold",
-                     "flag_close_pos_min", "flag_cluster_body_ratio",
-                     "flag_cluster_range_ratio", "flag_retrace_limit"):
-            if not (_is_num(getattr(self, name)) and getattr(self, name) >= 0):
-                _bad(name, "a non-negative number (>= 0)")
-
-        # ml_p_threshold is the one exception: it's a probability compared
-        # against a model score in [0, 1], so a value outside [0, 1] can never
-        # trigger. Everything else is free-range per the groups above.
-        if not (_is_num(self.ml_p_threshold) and 0 <= self.ml_p_threshold <= 1):
-            _bad("ml_p_threshold", "a probability in [0, 1]")
-
-        # Categorical knobs.
-        for name in ("ema_touch_delta_mode", "level_delta_mode"):
-            if getattr(self, name) not in ("absolute", "percent", "atr"):
-                _bad(name, "one of 'absolute' | 'percent' | 'atr'")
-
-        # VWAP bands: a non-empty tuple of positive multiples, with the entry
-        # band a valid index into it.
-        if not self.vwap_band_devs:
-            _bad("vwap_band_devs", "a non-empty tuple of band multiples")
-        if any(not _is_num(d) or d <= 0 for d in self.vwap_band_devs):
-            _bad("vwap_band_devs", "a tuple of positive band multiples")
-        if not (_is_int(self.vwap_entry_band)
-                and 0 <= self.vwap_entry_band < len(self.vwap_band_devs)):
-            _bad("vwap_entry_band", f"an index in [0, {len(self.vwap_band_devs)})")
-
-        # Non-empty path / session strings.
-        if not (isinstance(self.ml_model_path, str) and self.ml_model_path):
-            _bad("ml_model_path", "a non-empty path string")
-        if not (isinstance(self.vwap_session, str) and self.vwap_session):
-            _bad("vwap_session", "a non-empty session string")
+    def __post_init__(self) -> None:
+        o = "SwingMlParams"
+        cv.non_empty_str(o, "ml_model_path", self.ml_model_path)
+        cv.in_range(o, "ml_p_threshold", self.ml_p_threshold, 0, 1)
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# Section 2 — Strategy exits (per strategy)
+# Section 2 — Exit / take-profit policy catalog
 # ════════════════════════════════════════════════════════════════════════════
-# Which stop-loss / take-profit preset each strategy uses. Wired in via
-# exit_policy_for() (Section 3): BaseStrategy injects the resolved policy as
-# self.exit_policy (overridable by the CLI's --exit-preset). Keyed by the
-# strategy's name string — never by importing the class — so the import graph
-# stays acyclic (strategies → strategy_configurator → exits → core).
-
-DEFAULT_EXIT = "chandelier_2atr"   # global fallback for the trend/EMA/swing group
-DEFAULT = DEFAULT_EXIT             # readability alias for the no-override blocks below
-
-# Every strategy is listed explicitly. Values are EXIT_PRESETS keys (Section 3).
-# DEFAULT means "no custom exit" — those entries track DEFAULT_EXIT if you change
-# it (the alias is re-evaluated on import), so they stay behaviourally identical
-# to leaving the strategy out of this map. Change a strategy's exit here.
-PER_STRATEGY_EXIT: dict[str, str] = {
-
-    # ═══════════ EMA + RSI ═══════════  (ema, ema_inv)
-    #   exit: no custom exit → inherits DEFAULT (chandelier_2atr).
-    #         To give it one, set "ema"/"ema_inv" to any EXIT_PRESETS key.
-    "ema": DEFAULT,
-    "ema_inv": DEFAULT,
-
-    # ═══════════ SuperTrend ═══════════  (supertrend, supertrend_inv, supertrend_adaptive)
-    #   exit: no custom exit → inherits DEFAULT (chandelier_2atr).
-    #         To give it one, set the keys below to any EXIT_PRESETS key.
-    "supertrend": DEFAULT,
-    "supertrend_inv": DEFAULT,
-    "supertrend_adaptive": DEFAULT,
-
-    # ═══════════ EMA touch-and-rejection ═══════════  (ema_touch)
-    #   exit: fixed_1pct_rr3 — 1% fixed stop + 3R target (matches the source default).
-    "ema_touch": "fixed_1pct_rr3",
-
-    # ═══════════ Fractal breakout ═══════════  (fractal_breakout, fractal_breakout_inv)
-    #   exit: no custom exit → inherits DEFAULT (chandelier_2atr).
-    #         (Intentional: preserves the byte-for-byte behaviour of the
-    #          pre-rename level_breakout, which used this chandelier trail.)
-    "fractal_breakout": DEFAULT,
-    "fractal_breakout_inv": DEFAULT,
-
-    # ═══════════ Level breakout ═══════════  (level_breakout, level_breakout_inv)
-    #   exit: structural_rr2 — stop anchored on the broken level (entry stop_price) + 2R target.
-    #         level_breakout_inv fades the breakout: ATR stop from entry + 2R target (no level to anchor).
-    "level_breakout": "structural_rr2",
-    "level_breakout_inv": "atr_stop_rr2",
-
-    # ═══════════ Exhaustion reversal ═══════════  (exhaustion_reversal)
-    #   exit: structural — fixed structural stop + structural target.
-    "exhaustion_reversal": "structural",
-
-    # ═══════════ Impulse flag ═══════════  (impulse_flag)
-    #   exit: structural — fixed structural stop + structural target.
-    "impulse_flag": "structural",
-
-    # ═══════════ Order block ═══════════  (order_block, order_block_inv)
-    #   exit: structural — fixed structural stop + structural target.
-    "order_block": "structural",
-    "order_block_inv": "structural",
-
-    # ═══════════ VWAP bands ═══════════  (vwap_bands)
-    #   exit: vwap_mean — close reverts to the VWAP mean (CloseCrossTarget, no stop).
-    "vwap_bands": "vwap_mean",
-
-    # ═══════════ Swing (ZigZag) ═══════════  (swing_flip, swing_bounce, swing_breakout, swing_ml)
-    #   swing_flip / swing_ml: chandelier_3atr — 3·ATR trail (single source of truth for the distance).
-    #   swing_bounce / swing_breakout: structural_rr2 — swing-anchored stop (entry stop_price) + 2R target.
-    "swing_flip": "chandelier_3atr",
-    "swing_bounce": "structural_rr2",
-    "swing_breakout": "structural_rr2",
-    "swing_ml": "chandelier_3atr",
-}
-
-
-# ════════════════════════════════════════════════════════════════════════════
-# Section 3 — Exit / take-profit policy catalog
-# ════════════════════════════════════════════════════════════════════════════
-# The reusable preset menu (assigned per strategy in Section 2). Each value is a
-# preset (a factory) so a fresh policy is created per use, built from the
+# The reusable preset menu (assigned per strategy via each class's EXITS). Each
+# value is a factory so a fresh policy is created per use, built from the
 # mechanisms in engine/exits.py:
 #   — either a single mechanism (a trailing ChandelierStop, or a TP-only CloseCrossTarget)
 #   — or a CompositeExit(stop, target) that runs a stop then a target (stop-first).
-# Add a new SL/TP combo here, then reference it by key in Section 2.
+# Add a new SL/TP combo here, then reference it by key in a class's EXITS map.
 EXIT_PRESETS: dict[str, "callable[[], ExitPolicy]"] = {
 
     # SL-only presets: trailing chandeliers + static fixed stops
@@ -453,28 +513,80 @@ EXIT_PRESETS: dict[str, "callable[[], ExitPolicy]"] = {
 }
 
 
-# Resolves a strategy's assigned preset (its override in Section 2, else the
-# global DEFAULT_EXIT) into a fresh ExitPolicy. 3 steps:
-#   PER_STRATEGY_EXIT.get(name, DEFAULT_EXIT) → the preset key for this strategy
-#                                               (or "chandelier_2atr" if unlisted).
-#   EXIT_PRESETS[…]                           → look up that key's factory (the lambda).
-#   ()                                        → call it to build a brand-new ExitPolicy.
+# ════════════════════════════════════════════════════════════════════════════
+# Section 3 — Params registry + exit resolution
+# ════════════════════════════════════════════════════════════════════════════
+# PARAMS maps every strategy name → its config class. params_for(name) is the
+# single source of truth for a strategy's default signal knobs; the default exit
+# for each name lives on that class's EXITS map (Section 1). PER_STRATEGY_EXIT
+# below is *derived* from those maps — the central "glance view" that
+# exit_policy_for() and the catalog validator read — so the per-class EXITS stay
+# the single source of truth and this can't drift.
+
+PARAMS: dict[str, type] = {
+    "ema": EmaParams,
+    "ema_inv": EmaParams,
+    "supertrend": SupertrendParams,
+    "supertrend_inv": SupertrendParams,
+    "supertrend_adaptive": SupertrendParams,
+    "ema_touch": EmaTouchParams,
+    "fractal_breakout": FractalParams,
+    "fractal_breakout_inv": FractalParams,
+    "level_breakout": LevelParams,
+    "level_breakout_inv": LevelParams,
+    "exhaustion_reversal": ExhaustionParams,
+    "impulse_flag": ImpulseFlagParams,
+    "order_block": OrderBlockParams,
+    "order_block_inv": OrderBlockParams,
+    "vwap_bands": VwapParams,
+    "swing_flip": SwingParams,
+    "swing_bounce": SwingParams,
+    "swing_breakout": SwingParams,
+    "swing_ml": SwingMlParams,
+}
+
+
+def _assigned_exit(name: str, cls: type) -> str:
+    """The exit preset a strategy is assigned, read from its config class's
+    EXITS map. Fails loudly at import if a class forgot an entry."""
+    try:
+        return cls.EXITS[name]
+    except (AttributeError, KeyError) as exc:
+        raise ValueError(
+            f"{cls.__name__}.EXITS is missing an entry for strategy {name!r}"
+        ) from exc
+
+
+# Derived name → preset assignment, gathered from each config class's EXITS.
+PER_STRATEGY_EXIT: dict[str, str] = {
+    name: _assigned_exit(name, cls) for name, cls in PARAMS.items()
+}
+
+
+# Resolves a strategy's assigned preset into a fresh ExitPolicy. Reads the
+# assignment **live** from the strategy's config class EXITS map (via PARAMS) —
+# so the class stays the single source of truth and an edit there takes effect
+# without rebuilding the derived PER_STRATEGY_EXIT view. 3 steps:
+#   PARAMS[name].EXITS[name] → the preset key assigned on this strategy's class.
+#   EXIT_PRESETS[…]          → look up that key's factory (the lambda).
+#   ()                       → call it to build a brand-new ExitPolicy.
 def exit_policy_for(strategy_name: str) -> ExitPolicy:
     """Build the exit policy assigned to a strategy. Called by BaseStrategy to
     seed self.exit_policy.
 
-    Every *real* strategy (a StrategyName member) is guaranteed to be listed in
-    PER_STRATEGY_EXIT by _validate_exit_catalog() below — so the only way to
-    reach the DEFAULT_EXIT fallback here is an ad-hoc / experimental / test
-    strategy whose name is not in the enum. That fallback is intentional (a
-    prototype shouldn't need a catalog entry to run) but is logged at WARNING so
-    it is never silent.
+    Every *real* strategy (a StrategyName member) is guaranteed to have an EXITS
+    entry on its config class by _validate_exit_catalog() below — so the only way
+    to reach the DEFAULT_EXIT fallback here is an ad-hoc / experimental / test
+    strategy not in the registry. That fallback is intentional (a prototype
+    shouldn't need a catalog entry to run) but is logged at WARNING so it is
+    never silent.
     """
-    key = PER_STRATEGY_EXIT.get(strategy_name)
+    cls = PARAMS.get(strategy_name)
+    key = getattr(cls, "EXITS", {}).get(strategy_name) if cls is not None else None
     if key is None:
         logger.warning(
-            "Strategy %r has no PER_STRATEGY_EXIT entry; using DEFAULT_EXIT (%s). "
-            "Add it to PER_STRATEGY_EXIT to assign a specific exit.",
+            "Strategy %r has no EXITS entry on its config class; using "
+            "DEFAULT_EXIT (%s). Add it to that class's EXITS map.",
             strategy_name, DEFAULT_EXIT,
         )
         key = DEFAULT_EXIT
@@ -483,12 +595,11 @@ def exit_policy_for(strategy_name: str) -> ExitPolicy:
 
 def _validate_exit_catalog() -> None:
     """Fail at import if the exit catalog is internally inconsistent — so a typo
-    in PER_STRATEGY_EXIT or a forgotten new strategy is caught here, not at the
+    in a class's EXITS map or a forgotten new strategy is caught here, not at the
     runtime moment a strategy is first instantiated.
 
-    Checks: (1) DEFAULT_EXIT resolves; (2) every PER_STRATEGY_EXIT value is a
-    real EXIT_PRESETS key; (3) PER_STRATEGY_EXIT covers exactly the StrategyName
-    enum (no missing strategy, no stale/typo'd key).
+    Checks: (1) DEFAULT_EXIT resolves; (2) every assigned preset is a real
+    EXIT_PRESETS key; (3) the assignments cover exactly the StrategyName enum.
     """
     if DEFAULT_EXIT not in EXIT_PRESETS:
         raise ValueError(
@@ -499,7 +610,7 @@ def _validate_exit_catalog() -> None:
            if key not in EXIT_PRESETS}
     if bad:
         raise ValueError(
-            f"PER_STRATEGY_EXIT maps to unknown EXIT_PRESETS keys: {bad}. "
+            f"Exit assignments map to unknown EXIT_PRESETS keys: {bad}. "
             f"Known presets: {sorted(EXIT_PRESETS)}"
         )
     names = {s.value for s in StrategyName}
@@ -507,10 +618,55 @@ def _validate_exit_catalog() -> None:
     missing, unknown = names - mapped, mapped - names
     if missing or unknown:
         raise ValueError(
-            "PER_STRATEGY_EXIT must list exactly the StrategyName members. "
-            f"Missing (add an exit for these): {sorted(missing)}. "
+            "Exit assignments must cover exactly the StrategyName members. "
+            f"Missing (add an EXITS entry for these): {sorted(missing)}. "
             f"Unknown (not a strategy): {sorted(unknown)}."
         )
 
 
 _validate_exit_catalog()
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Section 4 — Params accessors
+# ════════════════════════════════════════════════════════════════════════════
+# Thin lookups over the PARAMS registry (Section 2). params_for(name) is the
+# single source of truth for a strategy's *default* signal knobs — the CLI and
+# notebooks both start from it, then override on top. params_class_for(name)
+# lets BaseStrategy type-check the config it is handed.
+
+def params_class_for(strategy_name: str) -> type | None:
+    """The config class a strategy expects, or None for an unregistered (ad-hoc /
+    test) strategy. BaseStrategy uses it to reject a wrong-type config early."""
+    return PARAMS.get(strategy_name)
+
+
+def params_for(strategy_name: str):
+    """The default param object for a strategy — single source of truth for its
+    signal-knob defaults. Mirrors exit_policy_for(); an unregistered name has no
+    params class, so callers building ad-hoc strategies must supply their own."""
+    cls = PARAMS.get(strategy_name)
+    if cls is None:
+        raise ValueError(
+            f"No params class registered for strategy {strategy_name!r}. "
+            f"Known: {sorted(PARAMS)}"
+        )
+    return cls()
+
+
+def _validate_params_registry() -> None:
+    """Fail at import if PARAMS doesn't cover exactly the StrategyName enum — so a
+    new strategy can't be added without giving it a params class (same guard the
+    exit catalog has)."""
+    names = {s.value for s in StrategyName}
+    mapped = set(PARAMS)
+    missing, unknown = names - mapped, mapped - names
+    if missing or unknown:
+        raise ValueError(
+            "PARAMS must list exactly the StrategyName members. "
+            f"Missing (add a params class for these): {sorted(missing)}. "
+            f"Unknown (not a strategy): {sorted(unknown)}."
+        )
+
+
+_validate_params_registry()

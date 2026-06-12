@@ -10,7 +10,7 @@ import pandas as pd
 import pytest
 
 from engine.live import LiveEngine
-from engine.strategy_configurator import StrategyConfig
+from engine.strategy_configurator import EmaParams
 
 
 class _StubStrategy:
@@ -19,7 +19,7 @@ class _StubStrategy:
     name = "stub"
 
     def __init__(self):
-        self.config = StrategyConfig()
+        self.config = EmaParams()
 
     def prepare(self, df):
         return df

@@ -38,7 +38,7 @@ import pandas as pd
 from ..indicators import atr as calc_atr
 from ..indicators import ema as calc_ema
 from ..core import Direction, ExitReason, PositionState
-from ..strategy_configurator import StrategyConfig
+from ..strategy_configurator import OrderBlockParams
 from .base import BaseStrategy
 
 
@@ -55,7 +55,7 @@ class OrderBlockStrategy(BaseStrategy):
 
     name = "order_block"
 
-    def __init__(self, config: StrategyConfig, exit_policy=None):
+    def __init__(self, config: OrderBlockParams, exit_policy=None):
         super().__init__(config, exit_policy)
         self._obs: List[_OrderBlock] = []
         self._active_stop: float = 0.0

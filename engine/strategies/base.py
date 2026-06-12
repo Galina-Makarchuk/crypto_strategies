@@ -20,7 +20,7 @@ import pandas as pd
 
 from ..exits import ExitContext, ExitPolicy
 from ..core import Direction, PositionState, Trade
-from ..strategy_configurator import StrategyConfig, exit_policy_for
+from ..strategy_configurator import exit_policy_for, params_class_for
 
 
 class BaseStrategy(ABC):
@@ -28,7 +28,20 @@ class BaseStrategy(ABC):
 
     name: str = "base"
 
-    def __init__(self, config: StrategyConfig, exit_policy: Optional[ExitPolicy] = None):
+    def __init__(self, config, exit_policy: Optional[ExitPolicy] = None):
+        # Type-check the config against what this strategy expects (its PARAMS
+        # entry). Catches the mix-up the per-strategy split can't catch by
+        # itself: handing a strategy an entirely wrong — but valid — config
+        # object (e.g. EMACrossoverStrategy(SupertrendParams())), which would
+        # otherwise blow up later and cryptically inside prepare(). Skipped for
+        # ad-hoc / test strategies not in the registry.
+        expected = params_class_for(self.name)
+        if expected is not None and not isinstance(config, expected):
+            raise TypeError(
+                f"{type(self).__name__} ({self.name!r}) expects a "
+                f"{expected.__name__}, got {type(config).__name__}. "
+                f"Build it from params_for({self.name!r})."
+            )
         self.config = config
         # The exit/TP mechanism for this run. Defaults to the strategy's assigned
         # preset (see strategy_configurator.exit_policy_for); a caller may inject a

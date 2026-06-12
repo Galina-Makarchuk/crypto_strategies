@@ -99,7 +99,7 @@ def validate_category(category: str) -> str:
 
 
 # ── Configuration ──────────────────────────────────────────────────────────────
-# StrategyConfig (strategy parameters) moved to engine/strategy_configurator.py.
+# Strategy parameters (the per-family *Params classes) live in engine/strategy_configurator.py.
 # This module holds only domain types + the PositionState state machine; the
 # config layers live in strategy_configurator.py / trade_configurator.py.
 

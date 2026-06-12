@@ -20,14 +20,14 @@ from ..indicators import (
     merge_price_levels,
 )
 from ..core import Direction, ExitReason, PositionState
-from ..strategy_configurator import StrategyConfig
+from ..strategy_configurator import FractalParams
 from .base import BaseStrategy
 
 
 class InverseFractalBreakoutStrategy(BaseStrategy):
     name = "fractal_breakout_inv"
 
-    def __init__(self, config: StrategyConfig, exit_policy=None):
+    def __init__(self, config: FractalParams, exit_policy=None):
         super().__init__(config, exit_policy)
         self._swing_highs: list[tuple[int, float]] = []
         self._swing_lows: list[tuple[int, float]] = []

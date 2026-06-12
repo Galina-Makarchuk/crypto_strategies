@@ -10,7 +10,7 @@ close.
 The price stop / take-profit is delegated to the injected exit policy (default
 preset ``fixed_1pct_rr3`` = a 1% fixed stop + a 3R target), which runs the stop
 first on an ambiguous bar — matching the source's conservative intrabar
-resolution. Strategy-level knobs live on ``StrategyConfig`` (``ema_touch_*``);
+resolution. Strategy-level knobs live on ``EmaTouchParams`` (``ema_touch_*``);
 cost / sizing / the long-short-both gate are the framework's job (TradingConfig).
 The strategy emits both sides (long tried first on an ambiguous bar) and the
 direction gate vetoes disallowed sides at ``state.enter``.
