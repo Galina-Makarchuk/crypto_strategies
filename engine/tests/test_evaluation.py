@@ -19,6 +19,7 @@ from engine.strategy_configurator import EmaParams
 from engine.trade_configurator import TradingConfig
 from engine.evaluation import (
     sweep, walk_forward, monte_carlo, metrics_from_trades, equity_curve, grid_search,
+    oracle_ceiling,
 )
 
 
@@ -211,3 +212,50 @@ def test_monte_carlo_accepts_trades():
 def test_monte_carlo_empty_raises():
     with pytest.raises(ValueError):
         monte_carlo([], n_sims=10)
+
+
+# ── oracle / theoretical ceiling ─────────────────────────────────────────────
+
+
+def test_oracle_ceiling_matches_inline_dp():
+    # The helper must reproduce the inline DP used in swing_zigzag/swing_ml so those
+    # notebooks can adopt it without changing their numbers.
+    df = _df(300)
+    cost = 12.0
+    ceil_bps, chain = oracle_ceiling(df, cost_bps=cost)
+    close = df["close"].to_numpy(dtype=float)
+    n = len(close)
+    dp = np.zeros(n)
+    for i in range(1, n):
+        seg = np.abs(close[i] - close[:i]) / close[:i] * 10_000.0 - cost
+        dp[i] = max(0.0, float((dp[:i] + seg).max()))
+    assert ceil_bps == pytest.approx(float(dp.max()))
+    # chain is non-empty iff a profitable trade exists, and its bps reconstructs the max
+    assert (len(chain) == 0) == (ceil_bps == 0.0)
+    if chain:
+        legs = sum(abs(close[chain[k + 1]] - close[chain[k]]) / close[chain[k]] * 10_000.0 - cost
+                   for k in range(len(chain) - 1))
+        assert legs == pytest.approx(ceil_bps)
+
+
+def test_oracle_ceiling_bounds_any_strategy():
+    df = _df(500)
+    tc = TradingConfig()
+    res = Backtester(EMACrossoverStrategy(EmaParams()), trading_config=tc).run(df, interval="15")
+    ceil_bps, _ = oracle_ceiling(df, cost_bps=tc.total_cost_bps())
+    assert ceil_bps >= res.total_pnl_bps  # perfect hindsight bounds any real strategy
+
+
+def test_oracle_ceiling_edge_cases():
+    # too short → no trade possible
+    assert oracle_ceiling(_df(1)) == (0.0, [])
+    # flat prices: every leg loses the cost → ceiling 0, empty chain
+    flat = pd.DataFrame(
+        {c: [100.0] * 50 for c in ("open", "high", "low", "close")}
+        | {"volume": [1.0] * 50, "turnover": [100.0] * 50},
+        index=pd.date_range("2025-01-01", periods=50, freq="15min", tz="UTC"),
+    )
+    assert oracle_ceiling(flat, cost_bps=12.0) == (0.0, [])
+    # zero cost on a non-flat series → strictly positive ceiling
+    ceil_bps, chain = oracle_ceiling(_df(200), cost_bps=0.0)
+    assert ceil_bps > 0.0 and len(chain) >= 2

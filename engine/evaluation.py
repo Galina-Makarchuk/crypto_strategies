@@ -33,13 +33,14 @@ from __future__ import annotations
 import dataclasses
 import itertools
 import logging
+from collections import Counter
 from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
 
 from .backtester import Backtester
-from .core import Trade
+from .core import ExitReason, Trade
 from .strategy_configurator import params_for
 from .trade_configurator import TradingConfig
 
@@ -100,6 +101,22 @@ def metrics_from_trades(trades: list[Trade]) -> dict:
     return out
 
 
+def exit_duration_columns(trades: list[Trade]) -> dict:
+    """Per-config exit-reason mix + average hold time, for the sweep grid.
+
+    Returns ``n_<reason>`` (one column per :class:`ExitReason`, zero-filled) plus
+    ``avg_duration_min``. Ported from the ema_values sweep so Grid search shows
+    *how* trades close (SL / TP / trailing / signal-flip / time-stop) and how long
+    they're held — not just aggregate P&L. Kept out of :func:`metrics_from_trades`
+    so the walk-forward / Monte-Carlo paths stay on the lean core-metric set.
+    """
+    counts = Counter(t.exit_reason.value for t in trades if t.exit_reason is not None)
+    out: dict = {f"n_{r.value}": counts.get(r.value, 0) for r in ExitReason}
+    durations = [t.duration.total_seconds() / 60 for t in trades if t.duration is not None]
+    out["avg_duration_min"] = sum(durations) / len(durations) if durations else 0.0
+    return out
+
+
 def equity_curve(trades: list[Trade], initial: float = 10_000.0) -> pd.Series:
     """Compounded equity after each trade (fixed full-fraction: ``*= 1+pnl_bps/1e4``),
     indexed by exit timestamp, with the starting point prepended. The per-trade
@@ -111,6 +128,58 @@ def equity_curve(trades: list[Trade], initial: float = 10_000.0) -> pd.Series:
         pts.append(eq)
         idx.append(t.exit_ts if t.exit_ts is not None else t.entry_ts)
     return pd.Series(pts, index=idx, name="equity")
+
+
+# ── oracle / theoretical ceiling ───────────────────────────────────────────────
+
+
+def oracle_ceiling(df: pd.DataFrame, cost_bps: float = 0.0) -> tuple[float, list[int]]:
+    """Best total P&L (bps) achievable on ``df`` with perfect hindsight, net of cost.
+
+    A perfect trader who buys every bottom and sells every top — taking the optimal
+    chain of pivots and flipping direction at each — caps what *any* strategy can earn
+    on this exact series. This finds that maximum total ``pnl_bps`` and the bar-index
+    chain that realises it; a strategy's ``total_pnl_bps / ceiling`` is its **skill
+    ratio** (the share of the theoretical max it captured).
+
+    Each leg between consecutive chain bars ``j → i`` earns
+    ``abs(close[i] - close[j]) / close[j] * 10_000 - cost_bps`` — the same bps
+    convention as ``PositionState.exit``, direction-agnostic — so ``cost_bps`` is the
+    round-trip cost per leg (e.g. ``TradingConfig.total_cost_bps()``).
+
+    Returns ``(max_bps, chain)``: ``max_bps >= 0`` (``0.0`` when no profitable trade
+    exists) and ``chain`` the bar indices ``[entry, exit, entry, …]`` with
+    ``len(chain) - 1`` legs (empty when ``max_bps == 0``). It is a hindsight
+    benchmark only — never used to generate signals, so it carries no look-ahead risk.
+
+    O(n²) in bar count: instant for a few thousand bars, slow above ~50k.
+    """
+    close = df["close"].to_numpy(dtype=float)
+    n = len(close)
+    if n < 2:
+        return 0.0, []
+
+    dp = np.zeros(n)                       # dp[i] = best cumulative bps for a chain ending at i
+    prev = np.full(n, -1, dtype=int)
+    for i in range(1, n):
+        seg = np.abs(close[i] - close[:i]) / close[:i] * 10_000.0 - cost_bps
+        cand = dp[:i] + seg
+        j = int(cand.argmax())
+        if cand[j] > 0.0:                  # only extend a chain through i while it stays profitable
+            dp[i] = float(cand[j])
+            prev[i] = j
+
+    max_bps = float(dp.max())
+    if max_bps <= 0.0:
+        return 0.0, []
+
+    chain: list[int] = []
+    cur = int(dp.argmax())
+    while cur != -1:
+        chain.append(cur)
+        cur = int(prev[cur])
+    chain.reverse()
+    return max_bps, chain
 
 
 # ── parameter sweep ──────────────────────────────────────────────────────────
@@ -137,8 +206,10 @@ def sweep(
     ``{"ema_fast": [5, 9, 13], "ema_slow": [21, 34]}``. Each combination is
     applied with :func:`dataclasses.replace` onto ``base_config`` (default
     the strategy's default params), backtested, reduced to one metrics row. Returns a
-    DataFrame with the param columns plus :data:`_METRIC_COLUMNS` —
-    one row per combination (no filtering; callers rank/filter).
+    DataFrame with the param columns plus :data:`_METRIC_COLUMNS`, the per-reason
+    exit counts (``n_<reason>``) and ``avg_duration_min`` (see
+    :func:`exit_duration_columns`) — one row per combination (no filtering;
+    callers rank/filter).
     """
     base = base_config if base_config is not None else params_for(strategy_cls.name)
     tc = trading_config or TradingConfig()
@@ -158,7 +229,8 @@ def sweep(
         # metrics_from_trades is the canonical bps-metric producer (keyed by
         # _METRIC_COLUMNS, pinned to match the engine's own stats), so the metric
         # column set lives in exactly one place instead of being re-listed here.
-        rows.append({**params, **metrics_from_trades(res.trades)})
+        rows.append({**params, **metrics_from_trades(res.trades),
+                     **exit_duration_columns(res.trades)})
     return pd.DataFrame(rows)
 
 
