@@ -14,12 +14,12 @@ from engine.strategy_configurator import EmaParams
 
 
 class _StubStrategy:
-    """Minimal strategy: LiveEngine._tick only needs name/prepare/on_bar."""
+    """Minimal strategy: LiveEngine._tick only needs name/prepare/on_bar.
+
+    No self.config — the engine never reads strategy.config; a strategy applies
+    its own params inside prepare()/on_bar() (proven in TestLiveStrategyConfig)."""
 
     name = "stub"
-
-    def __init__(self):
-        self.config = EmaParams()
 
     def prepare(self, df):
         return df
@@ -74,6 +74,46 @@ class TestLiveCategory:
         engine._tick()
 
         assert fake.calls[0]["category"] == "inverse"
+
+
+class TestLiveStrategyConfig:
+    """The engine runs the user's configured strategy params. It never reads
+    strategy.config itself — the strategy applies its own config inside
+    prepare()/on_bar(), and the engine calls those. Proven by a strategy that
+    records the config it was handed when the engine ticks."""
+
+    def test_tick_runs_strategy_with_its_configured_params(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("engine.live.build_chart", lambda *a, **k: None)
+
+        class _RecordingStrategy:
+            name = "stub"
+
+            def __init__(self, config):
+                self.config = config
+                self.prepared_with = None
+
+            def prepare(self, df):
+                self.prepared_with = self.config  # engine calls this each tick
+                return df
+
+            def on_bar(self, i, df, state):
+                return None
+
+        cfg = EmaParams(ema_fast=7, ema_slow=33)   # non-default knobs
+        strat = _RecordingStrategy(cfg)
+        engine = LiveEngine(
+            strategy=strat, symbol="BTCUSDT", interval="15", num_candles=5,
+            db_path=str(tmp_path / "cfg.db"), chart_path=str(tmp_path / "cfg.html"),
+        )
+        engine._fetcher = _FakeFetcher()
+
+        engine._tick()
+
+        # The engine ran THIS strategy's prepare(), and self.config carried the
+        # user's non-default knobs unchanged into the live loop — no divergence.
+        assert strat.prepared_with is cfg
+        assert strat.prepared_with.ema_fast == 7
+        assert strat.prepared_with.ema_slow == 33
 
 
 class TestLiveEquityLayer:

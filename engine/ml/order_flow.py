@@ -19,7 +19,7 @@ Per-bar features computed (see ``OFI_BAR_COLUMNS`` for the exact list):
 - large_trade_count  (proxy for institutional flow)
 - buy_trade_ratio    = buy_trades / total_trades
 
-Then ``compute_orderflow_features()`` adds rolling derivatives:
+Then ``compute_derived_orderflow()`` adds rolling derivatives:
 
 - imbalance / volume / count z-scores (50-bar window)
 - cumulative volume delta (CVD) change over 10 bars
@@ -169,13 +169,7 @@ def parse_day(path: Path) -> pd.DataFrame:
         path,
         compression="gzip",
         usecols=["timestamp", "side", "size", "price", "homeNotional", "foreignNotional"],
-        dtype={
-            "side": "string",
-            "size": "float64",
-            "price": "float64",
-            "homeNotional": "float64",
-            "foreignNotional": "float64",
-        },
+        dtype=_CSV_DTYPES,  # superset; pandas ignores keys for columns not in usecols
     )
     # Bybit bulk timestamps are UTC epoch seconds (float). Some daily files
     # arrive sorted ascending, some descending — re-sort defensively.
@@ -308,7 +302,7 @@ def build_orderflow_features(
         start, end: any pandas-parseable timestamp (inclusive on both sides).
         interval: bar size (pandas freq alias).
         raw_dir: where to cache raw daily gz files.
-        agg_dir: where to cache per-day Parquet aggregates.
+        agg_dir: where to cache per-day pickle aggregates (.pkl).
         keep_raw: if False, delete the raw gz after aggregating (saves disk).
         on_missing: ``"skip"`` (warn and continue) or ``"raise"`` for 404.
         progress: log per-day progress.

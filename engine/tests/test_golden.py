@@ -10,8 +10,8 @@ Regenerate the fixture (only when an intended behaviour change is accepted)::
 
     python -m engine.tests.test_golden   # or: python engine/tests/test_golden.py
 
-The two ML strategies are excluded — they need a trained model / order-flow data,
-which would make the snapshot non-deterministic across environments. They stay
+The one ML strategy (swing_ml) is excluded — it needs a trained model / order-flow
+data, which would make the snapshot non-deterministic across environments. It stays
 covered by engine/tests/test_ml.py.
 """
 
@@ -31,7 +31,7 @@ from engine.trade_configurator import TradingConfig
 
 GOLDEN = pathlib.Path(__file__).parent / "golden_trades.json"
 
-# Strategy name → class. ML strategies excluded (model/order-flow dependent).
+# Strategy name → class. The ML strategy (swing_ml) is excluded (model/order-flow dependent).
 STRATEGIES = {
     "fractal_breakout": S.FractalBreakoutStrategy,
     "fractal_breakout_inv": S.InverseFractalBreakoutStrategy,
@@ -165,3 +165,4 @@ def test_golden_parity(name):
 
 if __name__ == "__main__":
     _write_fixture()
+    _write_impulse_fixture()

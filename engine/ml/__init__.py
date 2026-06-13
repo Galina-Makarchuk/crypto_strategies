@@ -1,10 +1,12 @@
 """ML scaffolding for the swing-pivot prediction model.
 
-Three sub-modules:
+Four sub-modules:
 
-- ``labels``   — oracle swing pivots used as supervised targets.
-- ``features`` — causal feature transformers (every column is read-safe at bar i).
-- ``splits``   — purged k-fold with embargo, the right CV for sequential price data.
+- ``labels``     — oracle swing pivots used as supervised targets.
+- ``features``   — causal feature transformers (every column is read-safe at bar i).
+- ``splits``     — purged k-fold with embargo, the right CV for sequential price data.
+- ``order_flow`` — offline order-flow-imbalance (OFI) features from Bybit's bulk
+  trade archive (Tier 3); see the module for the live-mode caveat.
 
 Strategy code lives in ``strategies/swing_ml.py``. This package only
 contains the offline training scaffolding.

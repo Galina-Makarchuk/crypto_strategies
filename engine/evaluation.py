@@ -64,8 +64,8 @@ def metrics_from_trades(trades: list[Trade]) -> dict:
     all-wins → ``inf`` convention.
     """
     n = len(trades)
-    out = {"trades": n, "win_rate": 0.0, "total_pnl_bps": 0.0, "avg_pnl_bps": 0.0,
-           "profit_factor": 0.0, "max_drawdown_bps": 0.0, "sharpe_approx": 0.0}
+    out = {k: 0.0 for k in _METRIC_COLUMNS}   # single source of the metric names/order
+    out["trades"] = n
     if n == 0:
         return out
 
@@ -155,16 +155,10 @@ def sweep(
         cfg = dataclasses.replace(base, **params)
         res = Backtester(_instantiate(strategy_cls, cfg, exit_policy),
                          symbol=symbol, trading_config=tc).run(df, interval=interval)
-        rows.append({
-            **params,
-            "trades": res.total_trades,
-            "win_rate": res.win_rate,
-            "total_pnl_bps": res.total_pnl_bps,
-            "avg_pnl_bps": res.avg_pnl_bps,
-            "profit_factor": res.profit_factor,
-            "max_drawdown_bps": res.max_drawdown_bps,
-            "sharpe_approx": res.sharpe_approx,
-        })
+        # metrics_from_trades is the canonical bps-metric producer (keyed by
+        # _METRIC_COLUMNS, pinned to match the engine's own stats), so the metric
+        # column set lives in exactly one place instead of being re-listed here.
+        rows.append({**params, **metrics_from_trades(res.trades)})
     return pd.DataFrame(rows)
 
 

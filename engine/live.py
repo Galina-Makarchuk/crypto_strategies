@@ -4,7 +4,8 @@ Production features:
 - Graceful shutdown on SIGTERM / SIGINT
 - Circuit breaker: stops after N consecutive fetch failures
 - Crash recovery: position + trade history persist across restarts
-- Incremental candle update (full refetch with dedup for simplicity & safety)
+- Full candle refetch each tick (the still-forming last bar is dropped); no
+  incremental merge — simpler and safe against gaps
 - Writes chart to a single file (no browser-tab spam)
 - Bounded signal list (rolling window)
 """
@@ -16,9 +17,7 @@ import signal
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
-import pandas as pd
 
 from .fetcher import BybitFetcher
 from .core import ExitReason, PositionState, Trade, validate_category, validate_interval

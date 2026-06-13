@@ -1,9 +1,12 @@
 """Event-driven backtester.
 
 Feeds bars to the strategy one at a time.  The strategy's `on_bar(i, df, state)`
-is the only hook — and `i` is the latest known bar.  Look-ahead is prevented by
-the on_bar contract (see BaseStrategy.on_bar): strategies may only read
-df.iloc[0..i].  The contract is documented, not enforced by the runtime.
+is the only hook — and `i` is the latest known bar.  Look-ahead is prevented
+*by the runtime*: each bar, `on_bar` is handed a view truncated to df.iloc[0..i]
+(``enforce_causality=True``, the default), so a strategy physically cannot read a
+future row.  Pass ``enforce_causality=False`` to skip the per-bar slice (a small
+speedup) only when the strategy is trusted — the no-look-ahead test runs both and
+asserts the trades are identical.
 
 After the run, produces a typed summary with P&L stats.
 """
@@ -136,7 +139,7 @@ class Backtester:
         self,
         df: pd.DataFrame,
         interval: str = "15",
-        audit_lookahead: bool = False,
+        enforce_causality: bool = True,
     ) -> BacktestResult:
         logger.info("Running backtest: %s on %d bars …", self.strategy.name, len(df))
         warn_if_inverse_gated(self.strategy.name, self.trading_config)
@@ -147,18 +150,19 @@ class Backtester:
         state = self._new_state()
         max_hold = self.trading_config.max_holding_bars
 
-        # The on_bar contract is "may only read df.iloc[0..i]". audit_lookahead
-        # *enforces* it: each bar sees a view truncated to [0..i], so reading a
-        # future row raises (or changes results) instead of silently peeking.
-        # Off by default (slicing per bar has a cost); the no-look-ahead test
-        # turns it on and asserts the trades are identical to a normal run.
+        # The on_bar contract is "may only read df.iloc[0..i]". The runtime
+        # *enforces* it: each bar sees a view truncated to [0..i] (enforce_causality,
+        # on by default), so a peek at a future row is structurally impossible.
+        # enforce_causality=False skips the per-bar slice (a small speedup, the
+        # full frame is passed through); the no-look-ahead test runs both modes
+        # and asserts the trades are identical.
 
         # Feed bars one at a time. open_bar tracks the index where the current
         # trade opened, so the max-holding overlay can force a time-stop.
         open_bar: int | None = None
         prev_counter = state._trade_counter
         for i in range(len(prepared)):
-            view = prepared.iloc[: i + 1] if audit_lookahead else prepared
+            view = prepared.iloc[: i + 1] if enforce_causality else prepared
             self.strategy.on_bar(i, view, state)
 
             if state.current_trade is not None:

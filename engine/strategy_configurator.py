@@ -11,12 +11,13 @@ This is the strategy half of the config split (the trade half is
     ``dataclasses.replace`` instead of landing silently inert, and each family
     owns its own ``atr_period``. Field validation is delegated to
     ``config_validation`` (the shared rule home).
-  * **Section 2 — Params registry + derived exit map**: ``PARAMS`` maps every
-    strategy name → its config class; ``PER_STRATEGY_EXIT`` is *derived* from
-    each class's ``EXITS`` (the central "glance view").
-  * **Section 3 — Exit / take-profit policy catalog**: the reusable preset menu
-    (``EXIT_PRESETS``) + ``exit_policy_for()``, which reads a strategy's assigned
-    preset live from its class ``EXITS``. ``BaseStrategy`` sets
+  * **Section 2 — Exit / take-profit policy catalog**: the reusable preset menu
+    (``EXIT_PRESETS``), each entry a factory built from the mechanisms in
+    ``exits.py``. A strategy assigns one by key in its class ``EXITS`` (Section 1).
+  * **Section 3 — Params registry + exit resolution**: ``PARAMS`` maps every
+    strategy name → its config class; ``PER_STRATEGY_EXIT`` is *derived* from each
+    class's ``EXITS`` (the central "glance view"); ``exit_policy_for()`` resolves a
+    strategy's assigned preset live from its class ``EXITS``. ``BaseStrategy`` sets
     ``self.exit_policy = exit_policy_for(self.name)``; the CLI's ``--exit-preset``
     (and a notebook's ``EXIT_POLICY``) can override it.
   * **Section 4 — Params accessors**: ``params_for(name)`` (default config for a
@@ -54,9 +55,9 @@ logger = logging.getLogger(__name__)
 # Each strategy's default exit-preset assignment lives ON its config class (the
 # EXITS ClassVar), so a family's signal knobs and its exit sit together.
 # DEFAULT_EXIT is the shared fallback those maps lean on — defined up here so the
-# classes can reference it. The reusable preset menu (EXIT_PRESETS) + resolver
-# (exit_policy_for) stay central in Section 3; PER_STRATEGY_EXIT is derived from
-# the class maps in Section 2.
+# classes can reference it. The reusable preset menu (EXIT_PRESETS) stays central
+# in Section 2; PER_STRATEGY_EXIT and the resolver (exit_policy_for) live in
+# Section 3, with PER_STRATEGY_EXIT derived from the class EXITS maps (Section 1).
 DEFAULT_EXIT = "chandelier_2atr"   # global fallback for the trend/EMA/swing group
 DEFAULT = DEFAULT_EXIT             # readability alias for the no-override entries
 
@@ -118,12 +119,14 @@ class EmaParams:
 class SupertrendParams:
     """ATR volatility bands + trend direction. The adaptive variant uses an ADX
     regime switch: ADX >= adx_threshold = trending (follow) else ranging (fade).
-    The ADX period reuses atr_period."""
+    Both the ADX lookback (adx_period) and the regime threshold (adx_threshold)
+    are configurable; adx_period defaults to 14 (independent of atr_period)."""
 
     atr_period: int = 14
     supertrend_period: int = 10
     supertrend_mult: float = 3.0
-    adx_threshold: float = 25.0
+    adx_period: int = 14            # ADX lookback for the adaptive regime switch
+    adx_threshold: float = 25.0     # ADX >= this = trending (follow) else ranging (fade)
 
     EXITS: ClassVar[dict[str, str]] = {
         "supertrend": DEFAULT,
@@ -136,6 +139,7 @@ class SupertrendParams:
         cv.positive_int(o, "atr_period", self.atr_period)
         cv.positive_int(o, "supertrend_period", self.supertrend_period)
         cv.positive_number(o, "supertrend_mult", self.supertrend_mult)
+        cv.positive_int(o, "adx_period", self.adx_period)
         cv.non_negative_number(o, "adx_threshold", self.adx_threshold)
 
 
@@ -636,7 +640,7 @@ _validate_exit_catalog()
 # ════════════════════════════════════════════════════════════════════════════
 # Section 4 — Params accessors
 # ════════════════════════════════════════════════════════════════════════════
-# Thin lookups over the PARAMS registry (Section 2). params_for(name) is the
+# Thin lookups over the PARAMS registry (Section 3). params_for(name) is the
 # single source of truth for a strategy's *default* signal knobs — the CLI and
 # notebooks both start from it, then override on top. params_class_for(name)
 # lets BaseStrategy type-check the config it is handed.

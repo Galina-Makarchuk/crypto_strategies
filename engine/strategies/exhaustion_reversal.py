@@ -122,14 +122,6 @@ class _StreakTracker:
     def in_progress_volume(self) -> float:
         return self._vol
 
-    @property
-    def in_progress_high(self) -> float:
-        return self._high
-
-    @property
-    def in_progress_low(self) -> float:
-        return self._low
-
     def in_progress_length(self, current_bar: int) -> int:
         return current_bar - self._start + 1 if self._dir != 0 else 0
 
@@ -143,7 +135,6 @@ class ExhaustionReversalStrategy(BaseStrategy):
         super().__init__(config, exit_policy)
         self._tracker = _StreakTracker()
         self._entry_bar_idx: int = -1
-        self._stop_price: float = 0.0
         self._target_price: float = 0.0
         self._last_push_start_idx: int = -1
 
@@ -152,7 +143,6 @@ class ExhaustionReversalStrategy(BaseStrategy):
         df["atr"] = calc_atr(df, self.config.atr_period)
         self._tracker = _StreakTracker()
         self._entry_bar_idx = -1
-        self._stop_price = 0.0
         self._target_price = 0.0
         self._last_push_start_idx = -1
         return df
@@ -295,6 +285,5 @@ class ExhaustionReversalStrategy(BaseStrategy):
         sig = state.enter(direction, ts, close_i, stop_price=stop)
         if sig is not None:
             self._entry_bar_idx = i
-            self._stop_price = stop
             self._target_price = target
             self._last_push_start_idx = push.start_idx

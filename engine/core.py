@@ -243,8 +243,8 @@ class PositionState:
         if self.current_trade.direction == Direction.LONG:
             self.current_trade.peak_price = max(self.current_trade.peak_price, high)
         else:
-            if self.current_trade.peak_price == 0:
-                self.current_trade.peak_price = low
+            # enter() always seeds peak_price with the entry price (> 0), so a
+            # short's low-water mark is just the running minimum — no zero guard.
             self.current_trade.peak_price = min(self.current_trade.peak_price, low)
 
     def exit(

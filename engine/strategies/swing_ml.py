@@ -39,7 +39,7 @@ from ..ml.features import (
     build_feature_frame,
     build_feature_frame_t3,
 )
-from ..ml.labels import LABEL_HOLD, LABEL_LONG, LABEL_SHORT
+from ..ml.labels import LABEL_LONG, LABEL_SHORT
 from ..ml.order_flow import OFI_FEATURE_COLUMNS
 from ..core import Direction, ExitReason, PositionState
 from ..exits import ExitPolicy

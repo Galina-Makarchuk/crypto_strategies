@@ -14,23 +14,23 @@ import pandas as pd
 
 
 def atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
-    """Average True Range (Wilder smoothing via SMA of TR (True Range))."""
+    """Average True Range, Wilder's smoothing (the RMA = an EWMA of True Range)."""
     high = df["high"]
     low = df["low"]
     prev_close = df["close"].shift(1)
-    
+
     tr = pd.concat(
         [high - low, (high - prev_close).abs(), (low - prev_close).abs()],
         axis=1,
     ).max(axis=1)
-    
-    return tr.rolling(period, min_periods=1).mean()
-    # # initial simple average, then apply Wilder's smoothing via ewm
-    # atr_ewm = tr.rolling(period, min_periods=1).mean()
-    # # continue with ewm (com = period - 1 gives exactly Wilder's alpha=1/period)
-    # atr_ewm = atr_ewm.ewm(alpha=1/period, adjust=False).mean()
-    
-    # return atr_ewm
+
+    # Wilder's smoothing: an EWMA with alpha = 1/period (com = period - 1 is the
+    # equivalent form). adjust=False makes it the classic recursive RMA used
+    # across trading platforms, seeded from the first TR value — matching how
+    # rsi() smooths above. Strictly causal: bar i depends only on bars 0..i.
+    return tr.ewm(alpha=1.0 / period, adjust=False).mean()
+    # Plain SMA of True Range (if needed instead of EWMA):
+    # return tr.rolling(period, min_periods=1).mean()
 
 
 # ── VWAP Stdev Bands ───────────────────────────────────────────────────────────
@@ -164,7 +164,7 @@ def supertrend(
     )
 
 
-# ── Swing-point detection ──────────────────────────────────────────────────────
+# ── Trend strength (ADX) ─────────────────────────────────────────────────────
 
 
 def adx(df: pd.DataFrame, period: int = 14) -> pd.Series:
@@ -236,7 +236,7 @@ def adx(df: pd.DataFrame, period: int = 14) -> pd.Series:
     return result
 
 
-# ── Swing-point detection (continued) ─────────────────────────────────────────
+# ── Swing-point detection ──────────────────────────────────────────────────────
 
 
 def detect_swing_highs(

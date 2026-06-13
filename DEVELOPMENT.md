@@ -29,16 +29,17 @@ engine/
 ├── swing_detector.py            # ATR-prominence ZigZag swing detector (Swing records + tiers)
 ├── level_detector.py            # Support/resistance/pullback level detector (absolute/percent/ATR tolerance)
 ├── exits.py                     # Pluggable exit policies: stops + take-profits, CompositeExit (stop-first)
-├── strategy_configurator.py     # StrategyConfig (signal knobs) + exit-policy catalog (EXIT_PRESETS)
+├── strategy_configurator.py     # Per-family *Params (signal knobs) + PARAMS registry + exit-policy catalog (EXIT_PRESETS)
 ├── trade_configurator.py        # TradingConfig: costs, sizing, leverage, direction gate, risk overlays
 ├── data_configurator.py         # Single source of truth for market data: load_data() + parquet cache
 ├── fetcher.py                   # Bybit v5 kline client with retry + rate limiting
 ├── backtester.py                # Event-driven bar-by-bar backtester + additive equity layer
+├── evaluation.py                # Robustness toolkit: metrics, sweep, grid_search, walk_forward, monte_carlo
 ├── visualization.py             # Plotly chart builder + level overlay (plot_levels)
 ├── live_records.py              # SQLite-backed live records: open position + trade history
 ├── live.py                      # Live trading loop with circuit breaker + SIGTERM
 ├── cli.py                       # Argument parsing + strategy dispatch
-├── strategies/                  # 19 strategies, each a BaseStrategy (prepare + on_bar)
+├── strategies/                  # 20 strategies, each a BaseStrategy (prepare + on_bar)
 │   ├── base.py                  # Abstract base: prepare() + on_bar() + exit-policy injection
 │   ├── fractal_breakout.py      # N-bar fractal-pivot S/R breakout (indicators.detect_swing_*)
 │   ├── fractal_breakout_inv.py  # Inverse: fade the fractal breakout
@@ -47,6 +48,7 @@ engine/
 │   ├── level_breakout_inv.py    # Inverse: fade the level breakout
 │   ├── ema_cross.py             # EMA crossover + RSI filter
 │   ├── ema_cross_inv.py         # Inverse EMA crossover
+│   ├── ema_cross_adaptive.py    # Adaptive EMA crossover — RSI follow/fade regime switch
 │   ├── ema_touch.py             # EMA touch-and-rejection (ported from the ema project)
 │   ├── supertrend.py            # SuperTrend with correct band ratcheting
 │   ├── supertrend_inv.py        # Inverse SuperTrend
@@ -71,8 +73,9 @@ Strategies implement two methods:
 - `prepare(df)` — pre-compute indicators on a **copy** of the DataFrame
 - `on_bar(i, df, state)` — evaluate bar `i`, may only read `df.iloc[:i+1]`
 
-The backtester calls `on_bar()` sequentially. Look-ahead bias is structurally
-impossible because the strategy interface enforces it.
+The backtester calls `on_bar()` sequentially, handing it a view truncated to
+`df.iloc[:i+1]` each bar. Look-ahead bias is structurally impossible because the
+runtime enforces it (`Backtester.run(enforce_causality=True)`, the default).
 
 ### Typed signal pipeline
 No more stringly-typed `"long_entry"` / `"exit"` — signals use `Signal` dataclass
@@ -121,14 +124,14 @@ pytest engine/tests/test_core.py -v
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--strategy` | `supertrend` | `level_breakout`, `level_breakout_inv`, `fractal_breakout`, `fractal_breakout_inv`, `ema`, `ema_inv`, `ema_touch`, `supertrend`, `supertrend_inv`, `supertrend_adaptive`, `exhaustion_reversal`, `impulse_flag`, `order_block`, `order_block_inv`, `vwap_bands`, `swing_flip`, `swing_ml`, `swing_bounce`, `swing_breakout` |
+| `--strategy` | `supertrend` | `level_breakout`, `level_breakout_inv`, `fractal_breakout`, `fractal_breakout_inv`, `ema`, `ema_inv`, `ema_adaptive`, `ema_touch`, `supertrend`, `supertrend_inv`, `supertrend_adaptive`, `exhaustion_reversal`, `impulse_flag`, `order_block`, `order_block_inv`, `vwap_bands`, `swing_flip`, `swing_ml`, `swing_bounce`, `swing_breakout` |
 | `--mode` | `historical` | `historical`, `live` |
 | `--symbol` | `BTCUSDT` | Any Bybit linear perp |
 | `--interval` | `15` | `1,3,5,15,30,60,120,240,360,720,D,W,M` |
 | `--candles` | `800` | Number of historical candles |
-| `--save` | `chart.html` | Output chart path |
+| `--save` | `None` | Output chart path; default is repo-root anchored — `data/results/<dataset>/<strategy>.html` (historical) or `data/live/<symbol>_<interval>_<strategy>.html` (live) |
 | `--poll` | `30` | Live poll interval (seconds) |
-| `--db` | `trading_state.db` | SQLite path for live state |
+| `--db` | `None` | SQLite path for live state; default `data/live/<strategy>.db` |
 | `--log-level` | `INFO` | `DEBUG,INFO,WARNING,ERROR` |
 | `--log-json` | off | Structured JSON logging |
 

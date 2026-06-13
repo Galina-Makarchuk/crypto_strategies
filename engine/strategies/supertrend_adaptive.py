@@ -8,7 +8,8 @@ This avoids the main failure mode of each approach:
   - Normal SuperTrend bleeds in ranges (constant whipsaws)
   - Inverse SuperTrend bleeds in trends (fighting momentum)
 
-The ADX threshold (default 25) and lookback are configurable via SupertrendParams.
+The ADX threshold (adx_threshold, default 25) and lookback (adx_period, default
+14) are both configurable via SupertrendParams.
 """
 
 from __future__ import annotations
@@ -43,7 +44,7 @@ class AdaptiveSuperTrendStrategy(BaseStrategy):
         df["supertrend"] = st_line
         df["trend_dir"] = trend_dir
         df["atr"] = calc_atr(df, self.config.atr_period)
-        df["adx"] = calc_adx(df, period=self.config.atr_period)
+        df["adx"] = calc_adx(df, period=self.config.adx_period)
         return df
 
     def on_bar(self, i: int, df: pd.DataFrame, state: PositionState) -> None:

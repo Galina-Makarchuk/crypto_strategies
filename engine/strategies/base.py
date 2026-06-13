@@ -1,9 +1,10 @@
 """Base strategy interface.
 
-The key design decision: strategies receive the full DataFrame for indicator
-pre-computation, but signal generation happens bar-by-bar through `on_bar()`.
-The backtester calls `on_bar(i)` with only past data visible (i.e., `df[:i+1]`
-is the "known" universe).  This structurally prevents look-ahead bias.
+The key design decision: strategies receive the full DataFrame in `prepare()`
+for indicator pre-computation, but signal generation happens bar-by-bar through
+`on_bar()`.  The backtester feeds `on_bar(i)` a view truncated to `df[:i+1]` (the
+"known" universe), so look-ahead bias is structurally prevented *by the runtime*
+— not merely by convention (see Backtester.run's enforce_causality).
 
 Strategies must:
   1. Implement `prepare(df)` — compute any indicators (adds columns to a *copy*).

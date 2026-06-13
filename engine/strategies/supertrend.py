@@ -21,6 +21,13 @@ from .base import BaseStrategy
 class SuperTrendStrategy(BaseStrategy):
     name = "supertrend"
 
+    def __init__(self, config: SupertrendParams, exit_policy=None):
+        # Params reach the strategy here: BaseStrategy stores `config` as
+        # self.config (after type-checking it against PARAMS[name]), and prepare()
+        # / on_bar() read self.config.<knob>. The annotation documents the
+        # expected family and makes the import load-bearing.
+        super().__init__(config, exit_policy)
+
     def prepare(self, df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy()
         st_line, trend_dir = calc_supertrend(

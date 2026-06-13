@@ -6,8 +6,10 @@ These cover the gaps the configurators previously left open:
   * The CLI seeds its DataSpec from ACTIVE, like it does TradingConfig (Gap 2).
   * The exit-policy catalog is validated at import; exit_policy_for never
     silently picks a default for a real strategy (Gap 4).
-  * The no-look-ahead contract is *enforced* (not just documented) via
-    Backtester.run(audit_lookahead=True), checked against every strategy (Gap 5).
+  * The no-look-ahead contract is *enforced by the runtime* (not just documented):
+    Backtester feeds on_bar a view truncated to [0..i] by default. This test runs
+    each strategy with enforce_causality=False and asserts the trades match the
+    enforced run, proving none peek (Gap 5).
   * --exit-preset and sizing_mode overrides actually change behaviour (Gap 6).
 
 Run with: pytest engine/tests/test_config_propagation.py -v
@@ -42,7 +44,6 @@ from engine.strategy_configurator import (
     SwingParams,
     VwapParams,
     exit_policy_for,
-    params_class_for,
     params_for,
 )
 from engine import strategy_configurator as sc
@@ -247,12 +248,13 @@ class TestNoLookahead:
     @pytest.mark.parametrize("name", _RUNNABLE)
     def test_strategy_obeys_causality(self, name):
         df = _ohlcv()
-        normal = Backtester(cli._build_strategy(name, params_for(name))).run(df, interval="15")
-        audited = Backtester(cli._build_strategy(name, params_for(name))).run(
-            df, interval="15", audit_lookahead=True)
-        # audit_lookahead feeds on_bar a view truncated to [0..i]; a strategy
-        # that peeked at a future bar would diverge or raise here.
-        assert _trade_sig(normal) == _trade_sig(audited)
+        enforced = Backtester(cli._build_strategy(name, params_for(name))).run(df, interval="15")
+        unenforced = Backtester(cli._build_strategy(name, params_for(name))).run(
+            df, interval="15", enforce_causality=False)
+        # The runtime enforces causality by default — on_bar sees a view truncated
+        # to [0..i]. enforce_causality=False feeds the full frame instead; a
+        # strategy that peeked at a future bar would diverge between the two.
+        assert _trade_sig(enforced) == _trade_sig(unenforced)
 
 
 # ── Gap 6: overrides actually change behaviour, end-to-end ──────────────────────
@@ -309,8 +311,8 @@ class TestSizingModeOverride:
 
 
 class TestEmaParamsSplit:
-    """The per-strategy config split (POC: the EMA family). A foreign knob now
-    fails loudly instead of being silently inert."""
+    """The per-strategy config split: every family has its own *Params class. A
+    foreign knob now fails loudly instead of being silently inert."""
 
     def test_registry_covers_every_strategy(self):
         assert set(PARAMS) == {s.value for s in StrategyName}
@@ -318,7 +320,7 @@ class TestEmaParamsSplit:
     def test_params_for_returns_the_family_class(self):
         assert isinstance(params_for("ema"), EmaParams)
         assert isinstance(params_for("ema_inv"), EmaParams)
-        # un-migrated strategies still get the monolith
+        # every family resolves to its own *Params class
         assert isinstance(params_for("supertrend"), SupertrendParams)
 
     def test_foreign_override_fails_loudly(self):

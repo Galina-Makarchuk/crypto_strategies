@@ -74,7 +74,6 @@ class ImpulseFlagStrategy(BaseStrategy):
     def __init__(self, config: ImpulseFlagParams, exit_policy=None):
         super().__init__(config, exit_policy)
         self._pending: Optional[_Setup] = None
-        self._initial_stop: float = 0.0
         self._active_stop: float = 0.0
         self._t1: float = 0.0
         self._t2: float = 0.0
@@ -144,7 +143,6 @@ class ImpulseFlagStrategy(BaseStrategy):
     # ── helpers ────────────────────────────────────────────────────────────
 
     def _reset_trade_state(self) -> None:
-        self._initial_stop = 0.0
         self._active_stop = 0.0
         self._t1 = 0.0
         self._t2 = 0.0
@@ -380,7 +378,6 @@ class ImpulseFlagStrategy(BaseStrategy):
             self._pending = None
 
     def _arm_exits(self, setup: _Setup) -> None:
-        self._initial_stop = setup.stop
         self._active_stop = setup.stop
         self._t1 = setup.t1
         self._t2 = setup.t2

@@ -20,7 +20,7 @@ import pandas as pd
 
 from ..indicators import atr as calc_atr
 from ..indicators import ema as calc_ema
-from ..core import Direction, ExitReason, PositionState
+from ..core import Direction, PositionState
 from ..strategy_configurator import OrderBlockParams
 from .base import BaseStrategy
 
@@ -43,7 +43,6 @@ class InverseOrderBlockStrategy(BaseStrategy):
     def __init__(self, config: OrderBlockParams, exit_policy=None):
         super().__init__(config, exit_policy)
         self._obs: List[_OrderBlock] = []
-        self._active_stop: float = 0.0
         self._active_target: float = 0.0
 
     # ── prepare ────────────────────────────────────────────────────────────
@@ -103,7 +102,6 @@ class InverseOrderBlockStrategy(BaseStrategy):
     # ── helpers ────────────────────────────────────────────────────────────
 
     def _reset_trade_state(self) -> None:
-        self._active_stop = 0.0
         self._active_target = 0.0
 
     def _is_impulse(self, i: int, df: pd.DataFrame) -> bool:
@@ -272,7 +270,6 @@ class InverseOrderBlockStrategy(BaseStrategy):
                 direction = Direction.LONG
 
             if state.enter(direction, ts, close_i, stop_price=stop) is not None:
-                self._active_stop = float(stop)
                 self._active_target = float(target)
                 self._obs.remove(ob)
                 return
