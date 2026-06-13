@@ -11,6 +11,7 @@ mean-reversion counter-trend play against the standard OB.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -22,6 +23,8 @@ from ..indicators import ema as calc_ema
 from ..core import Direction, ExitReason, PositionState
 from ..strategy_configurator import OrderBlockParams
 from .base import BaseStrategy
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -56,7 +59,15 @@ class InverseOrderBlockStrategy(BaseStrategy):
         ltf_minutes = _infer_ltf_minutes(df, default=5)
         htf_minutes = cfg.ob_htf_minutes
         if htf_minutes <= ltf_minutes:
-            htf_minutes = max(60, 3 * ltf_minutes)
+            bumped = max(60, 3 * ltf_minutes)
+            logger.warning(
+                "order_block_inv: configured ob_htf_minutes=%d is not above the "
+                "chart interval (~%dmin), so it can't act as a higher-timeframe "
+                "bias filter — bumping the HTF resample to %dmin. Set "
+                "ob_htf_minutes above the interval to silence this.",
+                htf_minutes, ltf_minutes, bumped,
+            )
+            htf_minutes = bumped
 
         rule = f"{htf_minutes}min"
         htf = (
@@ -140,7 +151,7 @@ class InverseOrderBlockStrategy(BaseStrategy):
             float(df["close"].iloc[i]) - float(df["open"].iloc[i])
         )
         start = i
-        for k in range(1, 10):
+        for k in range(1, self.config.ob_origin_lookback):
             j = i - k
             if j < 0:
                 break

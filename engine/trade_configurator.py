@@ -126,6 +126,21 @@ class TradingConfig:
             return None
         return equity * (self.risk_per_trade_bps / 10_000.0) / stop_frac
 
+    def size_notional(
+        self, equity: float, entry_price: float, stop_price: float | None
+    ) -> tuple[float, bool]:
+        """Notional for one trade and whether it fell back to fixed-fraction.
+        RISK mode sizes from the entry stop; with no usable stop it falls back to
+        fixed-fraction (second element ``True``). FIXED mode never falls back.
+        Shared by the backtester's post-run equity pass and the live engine's
+        incremental one, so both modes size a given trade identically."""
+        if self.sizing_mode == SizingMode.RISK:
+            risk_n = self.risk_notional(equity, entry_price, stop_price)
+            if risk_n is not None:
+                return risk_n, False
+            return self.notional(equity), True   # no usable stop → fixed-fraction
+        return self.notional(equity), False
+
 
 def warn_if_inverse_gated(strategy_name: str, config: TradingConfig) -> None:
     """Warn when an asymmetric direction gate is layered on an ``*_inv`` strategy:

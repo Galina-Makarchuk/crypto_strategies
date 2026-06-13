@@ -21,10 +21,10 @@ from typing import Optional
 import pandas as pd
 
 from .fetcher import BybitFetcher
-from .core import ExitReason, PositionState, validate_category, validate_interval
+from .core import ExitReason, PositionState, Trade, validate_category, validate_interval
 from .live_records import LiveRecords
 from .strategies.base import BaseStrategy
-from .trade_configurator import TradingConfig, warn_if_inverse_gated
+from .trade_configurator import ACTIVE_TRADE, TradingConfig, warn_if_inverse_gated
 from .visualization import build_chart
 
 logger = logging.getLogger(__name__)
@@ -76,12 +76,22 @@ class LiveEngine:
         self.num_candles = num_candles
         self.poll_seconds = poll_seconds
         self.chart_path = chart_path
-        self.trading_config = trading_config or TradingConfig()
+        # Omitting trading_config inherits the project-wide ACTIVE_TRADE block (not
+        # a bare TradingConfig()), so live runs use the same trade defaults as the
+        # CLI and notebooks instead of silently diverging from them.
+        self.trading_config = trading_config or ACTIVE_TRADE
 
         self._fetcher = BybitFetcher()
         self._store = LiveRecords(db_path)
         self._state: PositionState = self._store.load_state()
         self._seed_state_policy(self._state)
+        # Paper-equity layer: a continuous, restart-safe simulated equity curve
+        # (the live engine places no real orders — this forward-tests the same
+        # sizing the backtester uses). Seeded from initial_equity on first run.
+        self._equity: float = self._store.load_equity(
+            default=self.trading_config.initial_equity
+        )
+        self._sized_trade_ids: set[str] = self._store.known_trade_ids()
         self._running = True
         self._consecutive_failures = 0
 
@@ -202,6 +212,9 @@ class LiveEngine:
         # once the position has been held for the configured number of bars.
         self._enforce_max_holding(prepared.index[last_bar], float(prepared["close"].iloc[last_bar]))
 
+        # Size any trade that just closed and compound the paper-equity curve.
+        self._apply_equity_to_new_closures()
+
         # Make a gated entry observable (otherwise a blocked signal looks like
         # the strategy simply did nothing this bar).
         if self._state.suppressed_entries != prev_suppressed:
@@ -231,15 +244,78 @@ class LiveEngine:
                 prepared["close"].iloc[-1],
             )
 
-        # Update chart (single file, overwritten each tick)
+        # Update chart (single file, overwritten each tick). Use the rich trade
+        # view: closed trades coloured by exit reason with bps + $ P&L on hover and
+        # entry→exit path lines, plus the open position's entry marker.
         now_str = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
         build_chart(
             prepared,
-            self._state.signals,
+            trades=self._chart_trades(prepared.index[0]),
             title=f"LIVE {self.symbol} {self.interval} | {self.strategy.name} | {now_str}",
             save_path=self.chart_path,
             auto_refresh=self.poll_seconds,
         )
+
+    def _chart_trades(self, window_start) -> list[Trade]:
+        """Trades to draw on the live chart: every closed trade whose exit falls in
+        the visible candle window, plus the currently open trade (if its entry is in
+        view). The open trade has no exit_ts, so the trade view renders only its
+        entry marker — no exit/path — which is exactly the live 'you are here' cue.
+        Filtering to the window keeps the x-axis pinned to the candles instead of
+        stretching to an old marker."""
+        trades = [
+            t for t in self._state.closed_trades
+            if t.exit_ts is not None and t.exit_ts >= window_start
+        ]
+        open_trade = self._state.current_trade
+        if (
+            open_trade is not None
+            and open_trade.entry_ts is not None
+            and open_trade.entry_ts >= window_start
+        ):
+            trades.append(open_trade)
+        return trades
+
+    def _apply_equity_to_new_closures(self) -> None:
+        """Size each newly closed trade and compound the paper-equity curve.
+
+        Mirrors the backtester's post-run equity layer, applied incrementally
+        (live closes one trade at a time). Each closed trade is sized exactly once
+        — the known-id set, loaded from the store, makes this idempotent across
+        restarts — via the same TradingConfig.size_notional the backtester uses, so
+        FIXED/RISK sizing matches. Fills the trade's currency fields and persists
+        the running equity; the existing _tick persistence block then writes the
+        trade (with those fields) to trade_history."""
+        tc = self.trading_config
+        for trade in self._state.closed_trades:
+            if not trade.is_closed or trade.trade_id in self._sized_trade_ids:
+                continue
+            notional, fell_back = tc.size_notional(
+                self._equity, trade.entry_price, trade.stop_price
+            )
+            trade.notional = notional
+            trade.pnl_currency = notional * (trade.pnl_bps / 10_000.0)
+            # Floor a blown account at zero (same as the backtester): equity can't
+            # go negative, and a negative notional would flip later P&L signs.
+            self._equity = max(0.0, self._equity + trade.pnl_currency)
+            trade.equity_after = self._equity
+            self._sized_trade_ids.add(trade.trade_id)
+            self._store.save_equity(self._equity)
+            if fell_back:
+                logger.info(
+                    "Risk-sizing fallback for trade %s (no entry stop) — "
+                    "fixed-fraction notional used.",
+                    trade.trade_id,
+                )
+            logger.info(
+                "Trade %s closed | pnl %+.1f bps | notional %.2f | "
+                "pnl %+.2f | equity %.2f",
+                trade.trade_id,
+                trade.pnl_bps,
+                notional,
+                trade.pnl_currency,
+                self._equity,
+            )
 
     def _enforce_max_holding(self, bar_ts, close: float) -> None:
         """Force a time-stop when an open trade has been held for at least

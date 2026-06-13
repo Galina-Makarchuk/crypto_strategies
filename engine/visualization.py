@@ -98,12 +98,14 @@ def _add_trade_markers(fig: go.Figure, trades: list[Trade]) -> None:
                 text=[f"<b>{'P' if t.pnl_bps > 0 else 'L'}</b>" for t in ts],
                 textposition="top center",
                 textfont=dict(size=16, color="black"),
-                # customdata is 2-D ([[pnl]]) so the d3 format in the template is honoured
-                # — a flat 1-D list silently ignores ":+.2f" and dumps full precision.
-                customdata=[[round(t.pnl_bps, 2)] for t in ts],
+                # customdata is 2-D ([[bps, $]]) so the d3 format in the template is
+                # honoured — a flat 1-D list silently ignores ":+.2f" and dumps full
+                # precision. Column 1 is the currency P&L (0.0 when no equity layer ran).
+                customdata=[[round(t.pnl_bps, 2), round(t.pnl_currency, 2)] for t in ts],
                 hovertemplate=("%{x}"
                                f"<br>exit ({reason}) %{{y:,.2f}}"
-                               "<br>P&L %{customdata[0]:+.2f} bps<extra></extra>"),
+                               "<br>P&L %{customdata[0]:+.2f} bps / $%{customdata[1]:+,.2f}"
+                               "<extra></extra>"),
             ),
             row=1, col=1,
         )

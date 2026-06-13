@@ -19,7 +19,7 @@ import pandas as pd
 
 from .core import ExitReason, PositionState, Trade
 from .strategies.base import BaseStrategy
-from .trade_configurator import SizingMode, TradingConfig, warn_if_inverse_gated
+from .trade_configurator import ACTIVE_TRADE, TradingConfig, warn_if_inverse_gated
 
 logger = logging.getLogger(__name__)
 
@@ -116,9 +116,11 @@ class Backtester:
     ):
         self.strategy = strategy
         self.symbol = symbol
-        # Trade-level policy (costs, sizing, direction, risk overlays). Default
-        # reproduces prior behaviour: 12 bps round-trip cost, both directions.
-        self.trading_config = trading_config or TradingConfig()
+        # Trade-level policy (costs, sizing, direction, risk overlays). Omitting it
+        # falls back to the project-wide ACTIVE_TRADE block (not a bare
+        # TradingConfig()), so a caller that doesn't pass one still inherits the
+        # user's edited trade defaults instead of silently diverging from them.
+        self.trading_config = trading_config or ACTIVE_TRADE
 
     def _new_state(self) -> PositionState:
         """A PositionState seeded with the run's trade-level policy."""
@@ -303,12 +305,8 @@ class Backtester:
 
     def _notional_for(self, trade: Trade, equity: float) -> tuple[float, bool]:
         """Notional for one trade and whether it fell back to fixed-fraction.
-        RISK mode uses the trade's stop; if none is available it falls back to
-        fixed-fraction (fell_back=True). FIXED mode never falls back."""
-        tc = self.trading_config
-        if tc.sizing_mode == SizingMode.RISK:
-            risk_n = tc.risk_notional(equity, trade.entry_price, trade.stop_price)
-            if risk_n is not None:
-                return risk_n, False
-            return tc.notional(equity), True   # no usable stop → fixed-fraction
-        return tc.notional(equity), False
+        Delegates to TradingConfig.size_notional so the backtest equity layer and
+        the live engine size every trade through the same code path."""
+        return self.trading_config.size_notional(
+            equity, trade.entry_price, trade.stop_price
+        )

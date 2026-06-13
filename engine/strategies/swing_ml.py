@@ -117,7 +117,7 @@ class SwingMLStrategy(BaseStrategy):
         # produced them. ml_atr (the trailing-stop input) is computed if absent.
         if {"ml_p_long", "ml_p_short", "ml_valid"}.issubset(df.columns):
             if "ml_atr" not in df.columns:
-                df["ml_atr"] = wilder_atr(df, 14)
+                df["ml_atr"] = wilder_atr(df, self.config.ml_atr_period)
             return df
 
         if self._model is None:
@@ -142,7 +142,7 @@ class SwingMLStrategy(BaseStrategy):
         else:
             feats = build_feature_frame(df)
 
-        df["ml_atr"] = wilder_atr(df, 14)
+        df["ml_atr"] = wilder_atr(df, self.config.ml_atr_period)
 
         valid_mask = feats.notna().all(axis=1)
         p_long = np.zeros(len(df), dtype=np.float64)

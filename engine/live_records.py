@@ -36,16 +36,28 @@ CREATE TABLE IF NOT EXISTS position_state (
 );
 
 CREATE TABLE IF NOT EXISTS trade_history (
-    trade_id    TEXT PRIMARY KEY,
-    direction   TEXT NOT NULL,
-    entry_ts    TEXT NOT NULL,
-    entry_price REAL NOT NULL,
-    exit_ts     TEXT,
-    exit_price  REAL,
-    pnl_bps     REAL,
-    peak_price  REAL,
-    exit_reason TEXT,
-    created_at  TEXT NOT NULL
+    trade_id     TEXT PRIMARY KEY,
+    direction    TEXT NOT NULL,
+    entry_ts     TEXT NOT NULL,
+    entry_price  REAL NOT NULL,
+    exit_ts      TEXT,
+    exit_price   REAL,
+    pnl_bps      REAL,
+    peak_price   REAL,
+    exit_reason  TEXT,
+    notional     REAL,
+    pnl_currency REAL,
+    equity_after REAL,
+    created_at   TEXT NOT NULL
+);
+
+-- Single-row paper-equity ledger: the running account equity for the live
+-- (forward-test) run. Persisted so the simulated equity curve is continuous
+-- across restarts, mirroring the backtester's compounding equity layer.
+CREATE TABLE IF NOT EXISTS account (
+    id         INTEGER PRIMARY KEY CHECK (id = 1),
+    equity     REAL NOT NULL,
+    updated_at TEXT NOT NULL
 );
 """
 
@@ -68,6 +80,9 @@ class LiveRecords:
         for table, column in (
             ("trade_history", "exit_reason TEXT"),
             ("position_state", "stop_price REAL"),
+            ("trade_history", "notional REAL"),
+            ("trade_history", "pnl_currency REAL"),
+            ("trade_history", "equity_after REAL"),
         ):
             try:
                 self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {column}")
@@ -142,8 +157,9 @@ class LiveRecords:
         self._conn.execute(
             """
             INSERT OR REPLACE INTO trade_history
-                (trade_id, direction, entry_ts, entry_price, exit_ts, exit_price, pnl_bps, peak_price, exit_reason, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (trade_id, direction, entry_ts, entry_price, exit_ts, exit_price, pnl_bps, peak_price,
+                 exit_reason, notional, pnl_currency, equity_after, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 trade.trade_id,
@@ -155,14 +171,43 @@ class LiveRecords:
                 trade.pnl_bps,
                 trade.peak_price,
                 trade.exit_reason.value if trade.exit_reason else None,
+                trade.notional,
+                trade.pnl_currency,
+                trade.equity_after,
                 now,
             ),
         )
         self._conn.commit()
 
+    # ── Paper-equity ledger ───────────────────────────────────────────────
+
+    def load_equity(self, default: float) -> float:
+        """Running paper-equity for the live run, or ``default`` on first run."""
+        row = self._conn.execute(
+            "SELECT equity FROM account WHERE id = 1"
+        ).fetchone()
+        if row is None or row[0] is None:
+            return default
+        return float(row[0])
+
+    def save_equity(self, equity: float) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        self._conn.execute(
+            "INSERT OR REPLACE INTO account (id, equity, updated_at) VALUES (1, ?, ?)",
+            (equity, now),
+        )
+        self._conn.commit()
+
+    def known_trade_ids(self) -> set[str]:
+        """trade_ids already persisted — so the live engine sizes each closed
+        trade into the equity curve exactly once, even across restarts."""
+        rows = self._conn.execute("SELECT trade_id FROM trade_history").fetchall()
+        return {r[0] for r in rows}
+
     def load_trade_history(self, limit: int = 200) -> list[Trade]:
         rows = self._conn.execute(
-            "SELECT trade_id, direction, entry_ts, entry_price, exit_ts, exit_price, pnl_bps, peak_price, exit_reason "
+            "SELECT trade_id, direction, entry_ts, entry_price, exit_ts, exit_price, pnl_bps, peak_price, "
+            "exit_reason, notional, pnl_currency, equity_after "
             "FROM trade_history ORDER BY created_at DESC LIMIT ?",
             (limit,),
         ).fetchall()
@@ -180,6 +225,9 @@ class LiveRecords:
                     pnl_bps=r[6] or 0.0,
                     peak_price=r[7] or 0.0,
                     exit_reason=ExitReason(r[8]) if r[8] else None,
+                    notional=r[9] or 0.0,
+                    pnl_currency=r[10] or 0.0,
+                    equity_after=r[11] or 0.0,
                 )
             )
         return trades

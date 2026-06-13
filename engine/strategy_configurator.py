@@ -357,6 +357,7 @@ class OrderBlockParams:
     ob_ema_slow: int = 20                    # LTF slow EMA (confirmation cross)
     ob_stop_buffer_pct: float = 0.005        # stop buffer beyond OB extreme
     ob_rr: float = 2.5                       # fixed reward:risk on target
+    ob_origin_lookback: int = 10             # max bars walked back to find the OB origin candle
 
     EXITS: ClassVar[dict[str, str]] = {
         "order_block": "structural",
@@ -376,6 +377,7 @@ class OrderBlockParams:
         cv.positive_int(o, "ob_ema_slow", self.ob_ema_slow)
         cv.non_negative_number(o, "ob_stop_buffer_pct", self.ob_stop_buffer_pct)
         cv.positive_number(o, "ob_rr", self.ob_rr)
+        cv.positive_int(o, "ob_origin_lookback", self.ob_origin_lookback)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -467,6 +469,7 @@ class SwingMlParams:
     ml_model_path: str = "ml_models/swing_zz_ml.joblib"
     ml_p_threshold: float = 0.55
     ml_use_stop: bool = True   # toggle only; trail distance = its EXITS preset (chandelier_3atr)
+    ml_atr_period: int = 14    # Wilder ATR period for the trailing-stop input (ml_atr)
 
     EXITS: ClassVar[dict[str, str]] = {
         "swing_ml": "chandelier_3atr",
@@ -476,6 +479,7 @@ class SwingMlParams:
         o = "SwingMlParams"
         cv.non_empty_str(o, "ml_model_path", self.ml_model_path)
         cv.in_range(o, "ml_p_threshold", self.ml_p_threshold, 0, 1)
+        cv.positive_int(o, "ml_atr_period", self.ml_atr_period)
 
 
 # ════════════════════════════════════════════════════════════════════════════
