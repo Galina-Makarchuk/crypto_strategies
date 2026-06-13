@@ -163,16 +163,17 @@ def oracle_ceiling(df: pd.DataFrame, cost_bps: float = 0.0) -> tuple[float, list
     prev = np.full(n, -1, dtype=int)
     for i in range(1, n):
         seg = np.abs(close[i] - close[:i]) / close[:i] * 10_000.0 - cost_bps
-        cand = dp[:i] + seg
-        j = int(cand.argmax())
-        if cand[j] > 0.0:                  # only extend a chain through i while it stays profitable
-            dp[i] = float(cand[j])
-            prev[i] = j
+        candidates = dp[:i] + seg
+        best_j = int(candidates.argmax())
+        if candidates[best_j] > 0.0:       # only extend a chain through i while it stays profitable
+            dp[i] = float(candidates[best_j])
+            prev[i] = best_j
 
     max_bps = float(dp.max())
     if max_bps <= 0.0:
         return 0.0, []
 
+    # Reconstruct optimal pivot chain by walking the parent pointers.
     chain: list[int] = []
     cur = int(dp.argmax())
     while cur != -1:
