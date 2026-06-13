@@ -107,6 +107,31 @@ class TestPurgedKFold:
             for ti in train_idx:
                 assert ti < test_lo - embargo or ti > test_hi + embargo
 
+    def test_feature_window_purged(self):
+        """A training sample after the test fold whose backward feature window of
+        length `purge` reaches into the fold must be removed (the leak M2 flags)."""
+        from engine.ml.splits import PurgedKFold
+
+        n = 600
+        embargo, purge = 5, 50
+        splitter = PurgedKFold(n_splits=5, embargo=embargo, purge=purge)
+        for train_idx, test_idx in splitter.split(n):
+            assert not set(train_idx).intersection(test_idx)
+            test_lo, test_hi = test_idx.min(), test_idx.max()
+            # Right side must clear feature window + embargo; left side embargo.
+            for ti in train_idx:
+                assert ti < test_lo - embargo or ti > test_hi + embargo + purge
+
+    def test_purge_zero_matches_embargo_only(self):
+        """purge=0 reproduces the original embargo-only mask (back-compat)."""
+        from engine.ml.splits import PurgedKFold
+
+        n = 500
+        a = list(PurgedKFold(n_splits=5, embargo=10).split(n))
+        b = list(PurgedKFold(n_splits=5, embargo=10, purge=0).split(n))
+        for (tr_a, te_a), (tr_b, te_b) in zip(a, b):
+            assert np.array_equal(tr_a, tr_b) and np.array_equal(te_a, te_b)
+
     def test_test_folds_cover_all_samples(self):
         from engine.ml.splits import PurgedKFold
 
@@ -252,7 +277,6 @@ class TestOrderFlow:
 
         trades = self._make_synthetic_trades(n=3000)
         bars = aggregate_to_bars(trades, interval="15min")
-        ofi = compute_derived_orderflow(bars)
 
         # Klines: 24h grid including hours with no trades
         kline_idx = pd.date_range(
@@ -263,7 +287,8 @@ class TestOrderFlow:
              "close": 60_000.0, "volume": 1.0},
             index=kline_idx,
         )
-        merged = merge_orderflow_features(klines, ofi)
+        # merge derives the rolling features on the continuous kline grid (L3).
+        merged = merge_orderflow_features(klines, bars)
         assert list(merged.columns) == list(OFI_FEATURE_COLUMNS)
         assert merged.notna().all().all(), "merge must leave no NaNs in OFI columns"
 
@@ -301,11 +326,10 @@ class TestOrderFlow:
         trades.index = pd.Timestamp("2025-06-15", tz="UTC") + pd.to_timedelta(offsets, unit="s")
 
         bars = aggregate_to_bars(trades, interval="15min")
-        ofi = compute_derived_orderflow(bars)
-        ofi_merged = merge_orderflow_features(klines, ofi)
+        ofi_merged = merge_orderflow_features(klines, bars)
         df_with_ofi = pd.concat([klines, ofi_merged], axis=1)
 
-        feats = build_feature_frame_t3(klines, ofi)
+        feats = build_feature_frame_t3(klines, bars)
         labels = oracle_swing_labels(klines, min_prominence_atr=1.0)
         mask = feats.notna().all(axis=1)
         X = feats.loc[mask].to_numpy()

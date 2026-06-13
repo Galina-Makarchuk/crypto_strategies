@@ -35,32 +35,55 @@ logger = logging.getLogger(__name__)
 _UNSET = object()
 
 
+# Strategy-name → class dispatch. Lifted to module level (and guarded at import
+# below) so a forgotten entry fails loudly when the module loads, mirroring the
+# params/exit registry guards in strategy_configurator — not at first run.
+_STRATEGY_BUILDERS = {
+    StrategyName.LEVEL_BREAKOUT.value: LevelBreakoutStrategy,
+    StrategyName.LEVEL_BREAKOUT_INV.value: InverseLevelBreakoutStrategy,
+    StrategyName.FRACTAL_BREAKOUT.value: FractalBreakoutStrategy,
+    StrategyName.FRACTAL_BREAKOUT_INV.value: InverseFractalBreakoutStrategy,
+    StrategyName.EMA_CROSS.value: EMACrossoverStrategy,
+    StrategyName.EMA_CROSS_INV.value: InverseEMACrossoverStrategy,
+    StrategyName.EMA_CROSS_ADAPTIVE.value: AdaptiveEMACrossoverStrategy,
+    StrategyName.SUPERTREND.value: SuperTrendStrategy,
+    StrategyName.SUPERTREND_INV.value: InverseSuperTrendStrategy,
+    StrategyName.SUPERTREND_ADAPTIVE.value: AdaptiveSuperTrendStrategy,
+    StrategyName.EXHAUSTION_REVERSAL.value: ExhaustionReversalStrategy,
+    StrategyName.IMPULSE_FLAG.value: ImpulseFlagStrategy,
+    StrategyName.ORDER_BLOCK.value: OrderBlockStrategy,
+    StrategyName.ORDER_BLOCK_INV.value: InverseOrderBlockStrategy,
+    StrategyName.VWAP_BANDS.value: VWAPBandsStrategy,
+    StrategyName.SWING_FLIP.value: SwingFlipStrategy,
+    StrategyName.SWING_ML.value: SwingMLStrategy,
+    StrategyName.SWING_BREAKOUT.value: SwingBreakoutStrategy,
+    StrategyName.EMA_TOUCH.value: EmaTouchStrategy,
+    StrategyName.SWING_BOUNCE.value: SwingBounceStrategy,
+}
+
+
+def _validate_strategy_dispatch() -> None:
+    """Pin that the dispatch dict covers every StrategyName (and nothing else),
+    so a new enum member missing a builder fails at import, not at run time."""
+    names = {s.value for s in StrategyName}
+    mapped = set(_STRATEGY_BUILDERS)
+    missing, unknown = names - mapped, mapped - names
+    if missing or unknown:
+        raise ValueError(
+            "cli._STRATEGY_BUILDERS out of sync with StrategyName: "
+            f"missing={sorted(missing)} unknown={sorted(unknown)}"
+        )
+
+
+_validate_strategy_dispatch()
+
+
 def _build_strategy(name: str, config, exit_policy=None):
-    strategies = {
-        StrategyName.LEVEL_BREAKOUT.value: LevelBreakoutStrategy,
-        StrategyName.LEVEL_BREAKOUT_INV.value: InverseLevelBreakoutStrategy,
-        StrategyName.FRACTAL_BREAKOUT.value: FractalBreakoutStrategy,
-        StrategyName.FRACTAL_BREAKOUT_INV.value: InverseFractalBreakoutStrategy,
-        StrategyName.EMA_CROSS.value: EMACrossoverStrategy,
-        StrategyName.EMA_CROSS_INV.value: InverseEMACrossoverStrategy,
-        StrategyName.EMA_CROSS_ADAPTIVE.value: AdaptiveEMACrossoverStrategy,
-        StrategyName.SUPERTREND.value: SuperTrendStrategy,
-        StrategyName.SUPERTREND_INV.value: InverseSuperTrendStrategy,
-        StrategyName.SUPERTREND_ADAPTIVE.value: AdaptiveSuperTrendStrategy,
-        StrategyName.EXHAUSTION_REVERSAL.value: ExhaustionReversalStrategy,
-        StrategyName.IMPULSE_FLAG.value: ImpulseFlagStrategy,
-        StrategyName.ORDER_BLOCK.value: OrderBlockStrategy,
-        StrategyName.ORDER_BLOCK_INV.value: InverseOrderBlockStrategy,
-        StrategyName.VWAP_BANDS.value: VWAPBandsStrategy,
-        StrategyName.SWING_FLIP.value: SwingFlipStrategy,
-        StrategyName.SWING_ML.value: SwingMLStrategy,
-        StrategyName.SWING_BREAKOUT.value: SwingBreakoutStrategy,
-        StrategyName.EMA_TOUCH.value: EmaTouchStrategy,
-        StrategyName.SWING_BOUNCE.value: SwingBounceStrategy,
-    }
-    cls = strategies.get(name)
+    cls = _STRATEGY_BUILDERS.get(name)
     if cls is None:
-        raise ValueError(f"Unknown strategy '{name}'. Available: {list(strategies.keys())}")
+        raise ValueError(
+            f"Unknown strategy '{name}'. Available: {list(_STRATEGY_BUILDERS)}"
+        )
     return cls(config, exit_policy=exit_policy)
 
 

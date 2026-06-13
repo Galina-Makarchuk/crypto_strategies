@@ -87,6 +87,11 @@ class TradingConfig:
         cv.non_negative_number(o, "slippage_bps", self.slippage_bps)
         cv.optional_positive_number(o, "max_daily_loss_bps", self.max_daily_loss_bps)
         cv.optional_positive_int(o, "max_holding_bars", self.max_holding_bars)
+        # Enum fields: a raw-string override (e.g. direction='long' instead of
+        # TradeDirection.LONG) would otherwise be accepted silently and gate out
+        # every trade / revert sizing to FIXED with no error. Reject it here.
+        cv.enum_member(o, "sizing_mode", self.sizing_mode, SizingMode)
+        cv.enum_member(o, "direction", self.direction, TradeDirection)
 
     # ── Derived ──────────────────────────────────────────────────────────────
 

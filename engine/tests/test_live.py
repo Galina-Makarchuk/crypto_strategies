@@ -174,6 +174,105 @@ class TestLiveEquityLayer:
         assert trade.trade_id in eng2._sized_trade_ids         # not re-sized
 
 
+class TestLiveReplayRestart:
+    """The live tick rebuilds the position by replaying the strategy over the
+    whole window from a fresh state, so any tick — including the first after a
+    restart — re-derives the SAME position with correctly-rebuilt internal
+    state. This is the durable fix for restart amnesia (audit H1/M1/M4/M5): the
+    old loop nudged a persisted position by the last bar against a prepare()-wiped
+    scratchpad, which (e.g.) force-closed a restored exhaustion_reversal trade."""
+
+    def _df(self, n: int = 500) -> pd.DataFrame:
+        rng = np.random.default_rng(7)
+        t = np.linspace(0, 9 * np.pi, n)
+        mid = 100.0 + 14.0 * np.sin(t) + np.linspace(0.0, 25.0, n)
+        close = mid + rng.standard_normal(n) * 0.5
+        high = close + np.abs(rng.standard_normal(n)) * 0.4 + 0.1
+        low = close - np.abs(rng.standard_normal(n)) * 0.4 - 0.1
+        open_ = close + rng.standard_normal(n) * 0.1
+        vol = rng.uniform(50, 500, n)
+        idx = pd.date_range("2026-01-01", periods=n, freq="15min", tz="UTC")
+        return pd.DataFrame(
+            {"open": open_, "high": high, "low": low, "close": close,
+             "volume": vol, "turnover": close * vol},
+            index=idx,
+        )
+
+    def _engine(self, tmp_path, strat, db="r.db", chart="r.html"):
+        return LiveEngine(
+            strategy=strat, symbol="BTCUSDT", interval="15", num_candles=500,
+            db_path=str(tmp_path / db), chart_path=str(tmp_path / chart),
+        )
+
+    @staticmethod
+    def _sig(t):
+        return (t.entry_ts, round(t.entry_price, 6), t.exit_ts,
+                round(t.exit_price, 6), t.exit_reason, t.direction)
+
+    def _strat(self):
+        from engine.strategies import ExhaustionReversalStrategy
+        from engine.strategy_configurator import params_for
+        return ExhaustionReversalStrategy(params_for("exhaustion_reversal"))
+
+    def test_replay_holds_open_position_not_force_closed(self, tmp_path):
+        """A window that ends mid-trade leaves the live engine HOLDING the open
+        position (rebuilt with correct internal state) — the old loop would have
+        force-closed/time-stopped it on the first tick."""
+        from engine.backtester import Backtester
+        from engine.core import ExitReason
+
+        df = self._df()
+        bt = Backtester(self._strat()).run(df, interval="15")
+        # A real (non-force-close) multi-bar trade to sit inside.
+        real = [t for t in bt.trades
+                if t.exit_reason != ExitReason.FORCE_CLOSE
+                and df.index.get_loc(t.exit_ts) - df.index.get_loc(t.entry_ts) >= 2]
+        assert real, "test df must produce at least one multi-bar exhaustion trade"
+        tr = real[0]
+        entry_i = df.index.get_loc(tr.entry_ts)
+        exit_i = df.index.get_loc(tr.exit_ts)
+        window = df.iloc[: (entry_i + exit_i) // 2 + 1]    # cut mid-trade
+
+        eng = self._engine(tmp_path, self._strat())
+        state = eng._replay(eng.strategy.prepare(window))
+        assert state.current_trade is not None                       # still open
+        assert state.current_trade.entry_ts == tr.entry_ts           # the same trade
+        assert state.current_trade.direction == tr.direction
+
+    def test_restart_reproduces_position_and_equity(self, tmp_path, monkeypatch):
+        """A fresh engine on the same DB (= a process restart) re-derives an
+        identical position and does not double-count equity."""
+        monkeypatch.setattr("engine.live.build_chart", lambda *a, **k: None)
+
+        df = self._df()
+        forming = df.iloc[[-1]].copy()
+        forming.index = forming.index + pd.Timedelta(minutes=15)
+        feed = pd.concat([df, forming])                # _tick drops the forming bar
+
+        class _Fetcher:
+            def fetch_klines(self, **kw):
+                return feed.copy()
+            def close(self):
+                pass
+
+        eng1 = self._engine(tmp_path, self._strat())
+        eng1._fetcher = _Fetcher()
+        eng1._tick()
+        eq1, open1 = eng1._equity, eng1._state.current_trade
+        closed1 = [self._sig(t) for t in eng1._state.closed_trades]
+
+        eng2 = self._engine(tmp_path, self._strat(), chart="r2.html")   # restart, same DB
+        eng2._fetcher = _Fetcher()
+        eng2._tick()
+
+        assert eng2._equity == pytest.approx(eq1)                 # no equity double-count
+        assert [self._sig(t) for t in eng2._state.closed_trades] == closed1
+        if open1 is not None:
+            assert eng2._state.current_trade is not None
+            assert eng2._state.current_trade.entry_ts == open1.entry_ts
+            assert eng2._state.current_trade.direction == open1.direction
+
+
 class TestLiveChartTrades:
     """The live chart uses the rich trade view: closed trades in the visible
     window plus the open position's entry marker."""

@@ -219,6 +219,13 @@ class PositionState:
             return None
         self._trade_counter += 1
         self.current_trade = Trade(
+            # Deterministic id keyed on the entry bar + side (one entry per bar,
+            # so it's unique) — stable regardless of how the data is windowed.
+            # The live engine rebuilds its position by replaying the strategy over
+            # a sliding candle window each tick; a stable id lets it recognise an
+            # already-seen trade across ticks/restarts (dedup for equity sizing
+            # and persistence) where a random/counter id would drift.
+            trade_id=f"{direction.value}@{ts.isoformat()}",
             direction=direction,
             entry_ts=ts,
             entry_price=price,

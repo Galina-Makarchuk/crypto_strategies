@@ -139,11 +139,16 @@ def build_feature_frame(df: pd.DataFrame) -> pd.DataFrame:
     vol = df["volume"]
 
     # ── Returns + ATR-normalized returns ─────────────────────────────────────
+    # ret_k          : k-bar log return (dimensionless).
+    # ret_k_atr      : the same move expressed in ATR units — a clean
+    #                  ATR-normalized return, (close - close[-k]) / ATR. (Was a
+    #                  log_return × close/atr hybrid; that only matched this to
+    #                  first order and mis-described the column — see audit L6.)
     atr = pd.Series(wilder_atr(df, ATR_PERIOD), index=df.index, name="atr")
+    atr_safe = atr.replace(0.0, np.nan)
     for k in RETURN_HORIZONS:
-        ret = np.log(close).diff(k)
-        feats[f"ret_{k}"] = ret
-        feats[f"ret_{k}_atr"] = ret * close / atr.replace(0.0, np.nan)
+        feats[f"ret_{k}"] = np.log(close).diff(k)
+        feats[f"ret_{k}_atr"] = (close - close.shift(k)) / atr_safe
 
     # ── Realized vol ─────────────────────────────────────────────────────────
     log_ret = np.log(close).diff()

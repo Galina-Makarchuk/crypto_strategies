@@ -99,6 +99,30 @@ class TestSuperTrend:
         assert len(trend_dir) == len(df)
         assert set(trend_dir.unique()).issubset({-1, 1})
 
+    def test_supertrend_seed_no_phantom_first_flip(self):
+        """A series that opens in a downtrend must seed trend[0] = -1, so the
+        first lower-band pierce is NOT read as a +1→-1 flip (audit L4). An
+        uptrend open still seeds +1."""
+        from engine.indicators import supertrend
+
+        idx = pd.date_range("2025-01-01", periods=60, freq="15min", tz="UTC")
+        down = np.linspace(150, 100, 60)               # opens high, falls
+        df_down = pd.DataFrame(
+            {"open": down, "high": down + 1, "low": down - 1, "close": down},
+            index=idx,
+        )
+        _, trend_down = supertrend(df_down, period=10, multiplier=2.0)
+        assert trend_down.iloc[0] == -1                 # seeded from close[0] < hl2[0]
+        # No spurious +1→-1 flip at the very start: the run never starts +1.
+        assert trend_down.iloc[0] == trend_down.iloc[1]
+
+        up = np.linspace(100, 150, 60)
+        df_up = pd.DataFrame(
+            {"open": up, "high": up + 1, "low": up - 1, "close": up}, index=idx,
+        )
+        _, trend_up = supertrend(df_up, period=10, multiplier=2.0)
+        assert trend_up.iloc[0] == 1
+
     def test_supertrend_band_ratcheting(self):
         """Verify that bands ratchet (tighten) — the key bug fix."""
         from engine.indicators import supertrend

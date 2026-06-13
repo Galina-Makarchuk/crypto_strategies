@@ -77,6 +77,18 @@ def one_of(owner: str, name: str, value, choices: Iterable) -> None:
             "one of " + " | ".join(repr(c) for c in choices))
 
 
+def enum_member(owner: str, name: str, value, enum_cls) -> None:
+    """Require an actual member of ``enum_cls`` — not its raw ``.value`` string.
+    Passing e.g. ``direction='long'`` instead of ``TradeDirection.LONG`` is a
+    natural mistake that would otherwise sail through (the string is in no
+    direction tuple, silently gating out every side); this makes it fail loudly
+    at construction like every other bad knob."""
+    require(owner, name, value, isinstance(value, enum_cls),
+            f"a {enum_cls.__name__} member (" +
+            " | ".join(f"{enum_cls.__name__}.{m.name}" for m in enum_cls) +
+            f"), not {type(value).__name__}")
+
+
 def non_empty_str(owner: str, name: str, value) -> None:
     require(owner, name, value, isinstance(value, str) and bool(value),
             "a non-empty string")

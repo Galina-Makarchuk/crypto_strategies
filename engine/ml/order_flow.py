@@ -308,8 +308,10 @@ def build_orderflow_features(
         progress: log per-day progress.
 
     Returns:
-        DataFrame indexed by bar-start timestamps (UTC, tz-aware), one row
-        per bar in [start, end], with all :data:`OFI_FEATURE_COLUMNS`.
+        DataFrame indexed by bar-start timestamps (UTC, tz-aware), one row per
+        OFI bar in [start, end], with the per-bar :data:`OFI_BAR_COLUMNS`. The
+        rolling derivatives are added by :func:`merge_orderflow_features` once
+        the bars are aligned to a continuous kline grid (audit L3).
     """
     raw_dir = Path(raw_dir)
     agg_dir = Path(agg_dir)
@@ -358,29 +360,35 @@ def build_orderflow_features(
 
     bars = pd.concat(daily_aggs).sort_index()
     bars = bars[~bars.index.duplicated(keep="first")]
-    return compute_derived_orderflow(bars)
+    # Return the PER-BAR aggregates only. The rolling derivatives (z-scores, CVD
+    # change) are deliberately NOT computed here: this OFI-only index is gappy
+    # (missing/illiquid days, day-edge bars Grouper never emits), so a positional
+    # rolling window over it counts OFI bars, not calendar bars. They are computed
+    # in ``merge_orderflow_features`` instead, on the continuous kline grid where
+    # the window is truly calendar-based. See audit L3.
+    return bars[list(OFI_BAR_COLUMNS)]
 
 
-def merge_orderflow_features(klines: pd.DataFrame, ofi: pd.DataFrame) -> pd.DataFrame:
-    """Reindex OFI features onto a kline DataFrame's index.
+def merge_orderflow_features(klines: pd.DataFrame, ofi_bars: pd.DataFrame) -> pd.DataFrame:
+    """Reindex per-bar OFI aggregates onto the kline grid, THEN derive the rolling
+    features (z-scores, CVD change) on that continuous calendar grid.
 
-    OFI bars are left-closed at the same grid as the klines (Bybit's klines
-    are also left-closed UTC), so this is a clean reindex. Missing bars are
-    forward-filled and then zero-filled — "no flow" is a valid state, not a
-    missing-data error.
+    Computing the derivatives here — after the reindex — rather than upstream on
+    the gappy OFI-only index is what makes the 50-bar windows count kline bars,
+    so missing/illiquid days no longer shrink or skew them (audit L3). Bybit
+    klines are left-closed UTC on the same grid as the OFI bars, so the reindex
+    is clean; no-flow bars are zero-filled ("no flow" is a valid state). Only the
+    per-bar columns (``OFI_BAR_COLUMNS``) of ``ofi_bars`` are used; any derived
+    columns it happens to carry are ignored and recomputed.
     """
-    aligned = ofi.reindex(klines.index)
-    # Fill empty bars: volume / counts / large = 0; imbalance / z-scores = 0
-    # (neutral); CVD-change carries the last observation.
-    aligned[["ofi_buy_volume_usd", "ofi_sell_volume_usd", "ofi_total_volume_usd",
-             "ofi_trade_count", "ofi_max_trade_usd", "ofi_large_trade_count",
-             "ofi_avg_trade_usd"]] = aligned[[
-                "ofi_buy_volume_usd", "ofi_sell_volume_usd", "ofi_total_volume_usd",
-                "ofi_trade_count", "ofi_max_trade_usd", "ofi_large_trade_count",
-                "ofi_avg_trade_usd"]].fillna(0.0)
-    aligned[["ofi_imbalance", "ofi_buy_trade_ratio",
-             "ofi_imbalance_z50", "ofi_volume_z50", "ofi_count_z50"]] = aligned[[
-                "ofi_imbalance", "ofi_buy_trade_ratio",
-                "ofi_imbalance_z50", "ofi_volume_z50", "ofi_count_z50"]].fillna(0.0)
-    aligned["ofi_cvd_change_10"] = aligned["ofi_cvd_change_10"].ffill().fillna(0.0)
-    return aligned
+    aligned = ofi_bars.reindex(klines.index)[list(OFI_BAR_COLUMNS)]
+    # No-flow bars: volume / counts / large = 0; imbalance / buy-ratio = 0 (neutral).
+    aligned = aligned.fillna(0.0)
+    derived = compute_derived_orderflow(aligned)
+    # Neutral-fill the warmup of the rolling columns so the merged frame is
+    # NaN-free (z-scores → 0 neutral, CVD-change → 0), preserving the prior
+    # no-NaN contract the model relies on.
+    fill_cols = ["ofi_imbalance", "ofi_buy_trade_ratio", "ofi_imbalance_z50",
+                 "ofi_volume_z50", "ofi_count_z50", "ofi_cvd_change_10"]
+    derived[fill_cols] = derived[fill_cols].fillna(0.0)
+    return derived[list(OFI_FEATURE_COLUMNS)]

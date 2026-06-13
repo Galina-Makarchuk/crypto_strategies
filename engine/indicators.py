@@ -133,6 +133,7 @@ def supertrend(
     final_upper[0] = upper_basic[0]
     final_lower[0] = lower_basic[0]
 
+    first_signal = -1
     for i in range(1, n):
         # Ratchet upper band DOWN (tighter) in downtrend
         if upper_basic[i] < final_upper[i - 1] or close[i - 1] > final_upper[i - 1]:
@@ -149,10 +150,23 @@ def supertrend(
         # Determine trend
         if close[i] > final_upper[i - 1]:
             trend[i] = 1
+            if first_signal < 0:
+                first_signal = i
         elif close[i] < final_lower[i - 1]:
             trend[i] = -1
+            if first_signal < 0:
+                first_signal = i
         else:
             trend[i] = trend[i - 1]
+
+    # Before the first band break the trend is genuinely undetermined; the
+    # unconditional +1 seed (trend = np.ones) makes that first break read as a
+    # +1→-1 flip when the series opens in a downtrend, which the supertrend
+    # strategies trade as a phantom signal (audit L4). Backfill the pre-signal
+    # bars to the first break's OWN direction so the break establishes the trend
+    # instead of flipping it — symmetric with the uptrend-open case, and causal.
+    if first_signal > 0:
+        trend[:first_signal] = trend[first_signal]
 
     # Build the SuperTrend line
     for i in range(n):

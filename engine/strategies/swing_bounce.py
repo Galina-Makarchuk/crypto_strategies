@@ -110,7 +110,8 @@ class SwingBounceStrategy(BaseStrategy):
         # ── entry (now flat): long tried first ──
         if not math.isfinite(atr_val) or atr_val <= 0:
             return
-        # Cooldown after an exit (default 0 = off; 0 allows same-bar re-entry).
+        # Cooldown after an exit (default 1 blocks same-bar re-entry; set 0 to
+        # re-enable the source's same-bar exit→re-entry on one bar's OHLC).
         if i - self._last_exit_bar < self.config.swing_bounce_min_bars_between_trades:
             return
 

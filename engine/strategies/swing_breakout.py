@@ -101,11 +101,12 @@ class SwingBreakoutStrategy(BaseStrategy):
             state.exit(df.index[i], decision.price, decision.reason)
             self._last_exit_bar = i
             # Source runs manage → entry sequentially: an exit can be followed by a
-            # same-bar re-entry (gated by the cooldown below).
+            # same-bar re-entry, gated by the cooldown below (default 1 blocks it).
 
         # ── entry (now flat): long tried first ──
         if not math.isfinite(atr_val) or atr_val <= 0:
             return
+        # Cooldown after an exit (default 1 blocks same-bar re-entry; set 0 to allow).
         if i - self._last_exit_bar < self.config.swing_breakout_min_bars_between_trades:
             return
 

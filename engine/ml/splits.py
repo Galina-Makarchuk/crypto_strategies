@@ -28,12 +28,24 @@ class PurgedKFold:
 
     Args:
         n_splits: number of folds.
-        embargo: number of bars to drop from training data on either side
-            of each test fold.
+        embargo: de Prado embargo — bars dropped from training on either side of
+            each test fold (serial-correlation buffer).
+        purge: feature lookback. A training sample *after* the test fold whose
+            backward feature window of this length reaches into the fold would be
+            built from test-period bars — leakage. Set this to the **maximum
+            feature lookback** (e.g. 200 for ``vol_200``); the bars immediately
+            after each fold are then purged. Leaving it 0 reproduces the old
+            embargo-only behaviour. Note: forward-looking *label* horizons (the
+            left-side leak) are covered by ``embargo``, not ``purge``.
     """
 
     n_splits: int = 5
     embargo: int = 24
+    purge: int = 0
+
+    def __post_init__(self) -> None:
+        if self.embargo < 0 or self.purge < 0:
+            raise ValueError("embargo and purge must be non-negative")
 
     def split(self, n_samples: int) -> Iterator[tuple[np.ndarray, np.ndarray]]:
         if n_samples < self.n_splits * 4:
@@ -52,9 +64,12 @@ class PurgedKFold:
         for start, stop in bounds:
             test_idx = all_idx[start:stop]
             train_mask = np.ones(n_samples, dtype=bool)
-            embargo_lo = max(0, start - self.embargo)
-            embargo_hi = min(n_samples, stop + self.embargo)
-            train_mask[embargo_lo:embargo_hi] = False
+            # Left: embargo only (a backward feature window can't reach forward
+            # into a later test fold). Right: purge the feature window first, then
+            # the embargo buffer on top (de Prado applies them in that order).
+            lo = max(0, start - self.embargo)
+            hi = min(n_samples, stop + self.purge + self.embargo)
+            train_mask[lo:hi] = False
             train_idx = all_idx[train_mask]
             yield train_idx, test_idx
 

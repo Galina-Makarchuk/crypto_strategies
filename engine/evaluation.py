@@ -42,7 +42,7 @@ import pandas as pd
 from .backtester import Backtester
 from .core import ExitReason, Trade
 from .strategy_configurator import params_for
-from .trade_configurator import TradingConfig
+from .trade_configurator import ACTIVE_TRADE, TradingConfig
 
 logger = logging.getLogger(__name__)
 
@@ -213,7 +213,7 @@ def sweep(
     callers rank/filter).
     """
     base = base_config if base_config is not None else params_for(strategy_cls.name)
-    tc = trading_config or TradingConfig()
+    tc = trading_config or ACTIVE_TRADE
     keys = list(grid)
     if not keys:
         raise ValueError("grid must contain at least one parameter")
@@ -270,7 +270,7 @@ def grid_search(
     from .strategy_configurator import EXIT_PRESETS
 
     base_config = base_config if base_config is not None else params_for(strategy_cls.name)
-    base_trading = base_trading or TradingConfig()
+    base_trading = base_trading or ACTIVE_TRADE
     base_data = base_data or ACTIVE
     loader = loader or load_data         # callable(DataSpec) -> df; injectable for tests / custom feeds
 
@@ -487,7 +487,7 @@ def walk_forward(
     OOS trades — the honest, look-ahead-free track record.
     """
     base = base_config if base_config is not None else params_for(strategy_cls.name)
-    tc = trading_config or TradingConfig()
+    tc = trading_config or ACTIVE_TRADE
     n = len(df)
     if train_bars <= 0 or test_bars <= 0:
         raise ValueError("train_bars and test_bars must be positive")

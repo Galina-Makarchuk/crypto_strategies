@@ -434,11 +434,11 @@ class SwingParams:
     swing_bounce_test_tolerance_atr: float = 0.5        # how close (in ATR) the wick must come to the swing level
     swing_bounce_require_close_rejection: bool = True   # bar must close back across the level
     swing_bounce_stop_atr_mult: float = 1.0             # entry stop = swing price ∓ mult·ATR (swing-anchored)
-    swing_bounce_min_bars_between_trades: int = 0       # cooldown bars after an exit before re-entry
+    swing_bounce_min_bars_between_trades: int = 1       # cooldown after an exit (>=1 blocks same-bar re-entry; 0 allows it)
     # Swing breakout (swing_breakout): continuation through confirmed swing pivots.
     swing_breakout_buffer_atr: float = 0.0              # close must clear the swing level by this many ATR
     swing_breakout_stop_atr_mult: float = 1.0           # entry stop = swing level ∓ mult·ATR (swing-anchored)
-    swing_breakout_min_bars_between_trades: int = 0     # cooldown bars after an exit before re-entry
+    swing_breakout_min_bars_between_trades: int = 1     # cooldown after an exit (>=1 blocks same-bar re-entry; 0 allows it)
 
     EXITS: ClassVar[dict[str, str]] = {
         "swing_flip": "chandelier_3atr",        # 3·ATR trail

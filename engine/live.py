@@ -42,14 +42,6 @@ def _in_jupyter() -> bool:
     except Exception:
         return False
 
-# Bar length in minutes, used to convert a max-holding-bars overlay into a time
-# delta in live mode (mirrors data_configurator._INTERVAL_MINUTES).
-_INTERVAL_MINUTES: dict[str, int] = {
-    "1": 1, "3": 3, "5": 5, "15": 15, "30": 30, "60": 60,
-    "120": 120, "240": 240, "360": 360, "720": 720,
-    "D": 1440, "W": 10080, "M": 43200,
-}
-
 
 class LiveEngine:
     """Runs a strategy in a poll loop against real-time Bybit data."""
@@ -172,7 +164,18 @@ class LiveEngine:
             logger.info("Live chart → %s", uri)
 
     def _tick(self) -> None:
-        """Single iteration of the live loop."""
+        """Single iteration of the live loop.
+
+        The position is rebuilt by **replaying the strategy over the whole candle
+        window from a fresh state** each tick — the same bar-by-bar loop the
+        backtester runs (minus the end-of-data force-close) — rather than nudging
+        a persisted position by the last bar alone. ``prepare()`` resets the
+        strategy's per-trade scratchpad and this loop rebuilds it bar-by-bar, so
+        the open position is always managed with correct internal state and
+        multi-bar setups accumulate. That makes crash recovery automatic (the
+        window deterministically re-derives the open position) and removes the
+        restart-amnesia bugs where a restored trade met a wiped scratchpad.
+        """
         df = self._fetcher.fetch_klines(
             symbol=self.symbol,
             interval=self.interval,
@@ -183,65 +186,60 @@ class LiveEngine:
         # Bybit returns the still-forming current candle as the most recent row.
         # Acting on it repaints — its high/low/close keep changing intra-bar, so
         # an entry/exit can fire on a wick the bar later erases. Drop it and
-        # evaluate only the last *closed* bar, the same data a backtest sees.
+        # evaluate only *closed* bars, the same data a backtest sees.
         if len(df) > 0:
             df = df.iloc[:-1]
         if len(df) == 0:
             logger.warning("No closed candles this tick (only a forming bar) — skipping.")
             return
 
-        # Prepare indicators
+        prev_open = self._state.current_trade if self._state else None
         prepared = self.strategy.prepare(df)
+        state = self._replay(prepared)
+        self._state = state
 
-        # Record state before
-        prev_trade_count = self._state._trade_counter
-        prev_signals_count = len(self._state.signals)
-        prev_suppressed = self._state.suppressed_entries
-
-        # Evaluate only the LAST bar (live mode)
-        last_bar = len(prepared) - 1
-        if self._state.current_trade is not None:
-            self._state.update_peak(
-                prepared["high"].iloc[last_bar],
-                prepared["low"].iloc[last_bar],
+        # A position that was open before but is no longer derivable from the
+        # window (its entry scrolled off the num_candles window) can't be rebuilt
+        # — surface it rather than silently dropping the trade.
+        if (
+            prev_open is not None
+            and prev_open.entry_ts is not None
+            and prev_open.entry_ts < prepared.index[0]
+            and (state.current_trade is None
+                 or state.current_trade.entry_ts != prev_open.entry_ts)
+        ):
+            logger.warning(
+                "Open %s position entered %s has scrolled off the %d-bar window "
+                "and can no longer be reconstructed — increase num_candles to keep "
+                "long holds recoverable.",
+                prev_open.direction.value, prev_open.entry_ts.isoformat(),
+                self.num_candles,
             )
-        self.strategy.on_bar(last_bar, prepared, self._state)
 
-        # max-holding overlay: if the strategy didn't exit, force a time-stop
-        # once the position has been held for the configured number of bars.
-        self._enforce_max_holding(prepared.index[last_bar], float(prepared["close"].iloc[last_bar]))
-
-        # Size any trade that just closed and compound the paper-equity curve.
+        # Size + persist any trade newly seen as closed (dedup by stable id), and
+        # compound the paper-equity curve. Only *new* closures are written, so the
+        # per-tick write volume is bounded (no full-history re-save).
         self._apply_equity_to_new_closures()
 
-        # Make a gated entry observable (otherwise a blocked signal looks like
-        # the strategy simply did nothing this bar).
-        if self._state.suppressed_entries != prev_suppressed:
+        if state.suppressed_entries:
             logger.info(
                 "Entry suppressed by trade policy (direction=%s) — not opened.",
                 self.trading_config.direction.value,
             )
 
         # Trim signals to bounded window
-        if len(self._state.signals) > _MAX_SIGNALS_KEPT:
-            self._state.signals = self._state.signals[-_MAX_SIGNALS_KEPT:]
+        if len(state.signals) > _MAX_SIGNALS_KEPT:
+            state.signals = state.signals[-_MAX_SIGNALS_KEPT:]
 
-        # Persist if anything changed
-        if (
-            self._state._trade_counter != prev_trade_count
-            or len(self._state.signals) != prev_signals_count
-        ):
-            self._store.save_state(self._state)
-            # Save completed trades
-            for trade in self._state.closed_trades:
-                if trade.is_closed:
-                    self._store.save_trade(trade)
-            logger.info(
-                "State updated | pos=%s | trades=%d | last_close=%.2f",
-                self._state.status.name,
-                self._state._trade_counter,
-                prepared["close"].iloc[-1],
-            )
+        # Persist the current open-position snapshot (single row) for restart
+        # display / reporting; closed trades are persisted in the equity pass.
+        self._store.save_state(state)
+        logger.info(
+            "State updated | pos=%s | closed=%d | last_close=%.2f",
+            state.status.name,
+            len(state.closed_trades),
+            prepared["close"].iloc[-1],
+        )
 
         # Update chart (single file, overwritten each tick). Use the rich trade
         # view: closed trades coloured by exit reason with bps + $ P&L on hover and
@@ -275,16 +273,65 @@ class LiveEngine:
             trades.append(open_trade)
         return trades
 
-    def _apply_equity_to_new_closures(self) -> None:
-        """Size each newly closed trade and compound the paper-equity curve.
+    def _fresh_state(self) -> PositionState:
+        """A new PositionState seeded with the run's trade-level policy (cost,
+        direction gate, daily-loss cap) — the live analogue of
+        Backtester._new_state, used to replay the window from scratch each tick."""
+        tc = self.trading_config
+        return PositionState(
+            cost_bps=tc.total_cost_bps(),
+            allow_long=tc.allows_long(),
+            allow_short=tc.allows_short(),
+            max_daily_loss_bps=tc.max_daily_loss_bps,
+        )
 
-        Mirrors the backtester's post-run equity layer, applied incrementally
-        (live closes one trade at a time). Each closed trade is sized exactly once
-        — the known-id set, loaded from the store, makes this idempotent across
-        restarts — via the same TradingConfig.size_notional the backtester uses, so
-        FIXED/RISK sizing matches. Fills the trade's currency fields and persists
-        the running equity; the existing _tick persistence block then writes the
-        trade (with those fields) to trade_history."""
+    def _replay(self, prepared) -> PositionState:
+        """Rebuild the canonical position by running the strategy over every bar
+        of the window from a fresh state — identical to Backtester.run's loop
+        (including the max-holding overlay), but WITHOUT the end-of-data
+        force-close: the final bar's position is the live OPEN position, not a
+        closed trade. Because prepare() reset the scratchpad and this loop walks
+        all bars, the strategy's internal state is correctly rebuilt for the open
+        position (no restart amnesia) and multi-bar setups accumulate."""
+        state = self._fresh_state()
+        max_hold = self.trading_config.max_holding_bars
+        open_bar: int | None = None
+        prev_counter = state._trade_counter
+        for i in range(len(prepared)):
+            view = prepared.iloc[: i + 1]
+            self.strategy.on_bar(i, view, state)
+
+            if state.current_trade is not None:
+                if state._trade_counter != prev_counter:   # a new trade just opened
+                    open_bar = i
+                    prev_counter = state._trade_counter
+                if (
+                    max_hold is not None
+                    and open_bar is not None
+                    and (i - open_bar) >= max_hold
+                ):
+                    state.exit(
+                        prepared.index[i],
+                        float(prepared["close"].iloc[i]),
+                        ExitReason.TIME_STOP,
+                    )
+                    open_bar = None
+            else:
+                open_bar = None
+        return state
+
+    def _apply_equity_to_new_closures(self) -> None:
+        """Size + persist each newly closed trade and compound the paper-equity curve.
+
+        Mirrors the backtester's post-run equity layer, applied incrementally as
+        the replay surfaces closures. Each closed trade is processed exactly once
+        — the stable-id known set, loaded from the store, makes this idempotent
+        across ticks and restarts even though the replay re-derives the full
+        window's trades every tick — via the same TradingConfig.size_notional the
+        backtester uses, so FIXED/RISK sizing matches. Only *new* closures are
+        written to trade_history (one upsert each), so per-tick write volume is
+        bounded by how many trades closed since the last tick — not the full
+        history (audit M3)."""
         tc = self.trading_config
         for trade in self._state.closed_trades:
             if not trade.is_closed or trade.trade_id in self._sized_trade_ids:
@@ -300,6 +347,7 @@ class LiveEngine:
             trade.equity_after = self._equity
             self._sized_trade_ids.add(trade.trade_id)
             self._store.save_equity(self._equity)
+            self._store.save_trade(trade)   # persist this newly-closed trade once
             if fell_back:
                 logger.info(
                     "Risk-sizing fallback for trade %s (no entry stop) — "
@@ -315,24 +363,6 @@ class LiveEngine:
                 trade.pnl_currency,
                 self._equity,
             )
-
-    def _enforce_max_holding(self, bar_ts, close: float) -> None:
-        """Force a time-stop when an open trade has been held for at least
-        max_holding_bars. Bars held are derived from the entry timestamp and the
-        bar interval (live evaluates only the latest bar, so there's no bar
-        counter to lean on)."""
-        max_hold = self.trading_config.max_holding_bars
-        trade = self._state.current_trade
-        if max_hold is None or trade is None or trade.entry_ts is None:
-            return
-        minutes = _INTERVAL_MINUTES[self.interval]
-        # Integer bar count between entry and this (closed) bar — both timestamps
-        # are bar-open times aligned to the interval, so round() is exact and
-        # mirrors the backtester's `(i - open_bar) >= max_hold`.
-        bars_held = round((bar_ts - trade.entry_ts).total_seconds() / (minutes * 60))
-        if bars_held >= max_hold:
-            self._state.exit(bar_ts, close, ExitReason.TIME_STOP)
-            logger.info("Max-holding time-stop after %d bars.", bars_held)
 
     def _cleanup(self) -> None:
         logger.info("Cleaning up …")
