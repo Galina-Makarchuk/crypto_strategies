@@ -17,6 +17,7 @@ covered by engine/tests/test_ml.py.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import pathlib
 
@@ -163,6 +164,38 @@ def test_golden_parity(name):
     assert _signature(STRATEGIES[name]) == expected
 
 
+# ── Per-detector golden: the level_* strategies under each non-default detector ─
+# pivot_level (the default) is already pinned by the main fixture above; these pin
+# the two ported detectors so a drift in the cluster_level / touch_level port
+# fails here. Keyed "<strategy>:<detector>".
+LEVEL_DETECTOR_GOLDEN = pathlib.Path(__file__).parent / "golden_level_detectors.json"
+_LEVEL_DETECTOR_CASES = [
+    (sname, det)
+    for sname in ("level_breakout", "level_breakout_inv")
+    for det in ("cluster_level", "touch_level")
+]
+
+
+def _level_detector_signature(sname: str, det: str) -> list:
+    cls = STRATEGIES[sname]
+    cfg = dataclasses.replace(params_for(sname), level_detector=det)
+    result = Backtester(cls(cfg), trading_config=TradingConfig()).run(_golden_df(), interval="15")
+    return _trades_of(result)
+
+
+def _write_level_detector_fixture() -> None:
+    data = {f"{s}:{d}": _level_detector_signature(s, d) for s, d in _LEVEL_DETECTOR_CASES}
+    LEVEL_DETECTOR_GOLDEN.write_text(json.dumps(data, indent=1))
+    print("wrote", LEVEL_DETECTOR_GOLDEN.name, {k: len(v) for k, v in data.items()})
+
+
+@pytest.mark.parametrize("sname,det", _LEVEL_DETECTOR_CASES)
+def test_golden_level_detectors(sname, det):
+    expected = json.loads(LEVEL_DETECTOR_GOLDEN.read_text())[f"{sname}:{det}"]
+    assert _level_detector_signature(sname, det) == expected
+
+
 if __name__ == "__main__":
     _write_fixture()
     _write_impulse_fixture()
+    _write_level_detector_fixture()

@@ -37,6 +37,7 @@ from typing import ClassVar
 
 from . import config_validation as cv
 from .core import StrategyName
+from .levels import LEVEL_SOURCE_NAMES
 from .exits import (
     AtrStop,
     ChandelierStop,
@@ -215,20 +216,46 @@ class FractalParams:
 # ──────────────────────────────────────────────────────────────────────────────
 @dataclass(frozen=True)
 class LevelParams:
-    """Horizontal S/R from the dedicated engine.level_detector (stateful
-    resistance/support/pullback levels seeded at confirmed pivots and tracked
-    forward until invalidated). Distinct from the fractal_breakout detector.
-    Family has room to grow (level_bounce / level_retest) on the shared pivot
-    window. Carries its OWN atr period (level_atr_period)."""
+    """Horizontal S/R from the dedicated engine.levels package. The detector is
+    selectable via level_detector (chosen like any other knob, swept like any
+    other field):
 
-    level_pivot_window: int = 3             # symmetric pivot window for all 3 families
-    level_delta: float = 0.5                # invalidation tolerance magnitude; units set by level_delta_mode
+      pivot_level   — pivot-seeded, invalidation-tracked (resistance/support/
+                      pullback); the default and the only one with a pullback family.
+      cluster_level — merges nearby pivots into one level; dies on a decisive
+                      close-through break; reads the cluster_* knobs.
+      touch_level   — significance by historical touch count; reads the touch_*
+                      knobs.
+
+    All three read the shared level_* knobs (pivot window, ATR period, tolerance);
+    the cluster_*/touch_* knobs are read only by their own detector and are inert
+    (validated but unused) under the others. Distinct from the fractal_breakout
+    detector. Family has room to grow (level_bounce / level_retest). Carries its
+    OWN atr period (level_atr_period)."""
+
+    # Detector selection — pivot_level | cluster_level | touch_level.
+    level_detector: str = "pivot_level"
+
+    # Shared knobs (every detector maps these).
+    level_pivot_window: int = 3             # symmetric pivot window for all detectors
+    level_delta: float = 0.5                # tolerance magnitude; units set by level_delta_mode
     level_delta_mode: str = "atr"           # "absolute" (quote pts) | "percent" (% of level) | "atr" (×ATR)
-    level_invalidation_candles: int = 3     # bracket count ([low,high] straddles level) before a level dies
+    level_invalidation_candles: int = 3     # pivot_level: bracket count before a level dies
     level_atr_period: int = 14              # ATR period (level_delta_mode='atr' + exit/sizing ATR)
-    level_use_pullback: bool = False        # fold the pullback family into the S/R level set
+    level_use_pullback: bool = False        # pivot_level: fold the pullback family into the S/R set
     level_breakout_buffer_atr: float = 0.0  # close must clear the level by this ×ATR to trigger
     level_stop_atr_mult: float = 1.5        # level_breakout entry stop = broken level ∓ mult·ATR (structural)
+
+    # cluster_level knobs (ATR-based merge + close-through break).
+    cluster_merge_atr_mult: float = 0.5     # merge a pivot into a level within this ×ATR
+    cluster_break_atr_mult: float = 0.1     # close must clear the level by this ×ATR to break it
+    cluster_max_levels: int = 300           # cap on simultaneously-active levels (oldest retired)
+
+    # touch_level knobs (tolerance units follow level_delta_mode).
+    touch_cluster_mult: float = 0.5         # swing-clustering band magnitude
+    touch_band_mult: float = 0.75           # how close counts as a touch
+    touch_min_touches: int = 3              # touches before a level becomes observable
+    touch_recency_bars: int = 0             # 0 = keep all; else drop levels untouched in the last N bars
 
     EXITS: ClassVar[dict[str, str]] = {
         # structural stop anchored on the broken level (entry stop_price) + 2R;
@@ -239,6 +266,7 @@ class LevelParams:
 
     def __post_init__(self) -> None:
         o = "LevelParams"
+        cv.one_of(o, "level_detector", self.level_detector, LEVEL_SOURCE_NAMES)
         cv.positive_int(o, "level_pivot_window", self.level_pivot_window)
         cv.non_negative_number(o, "level_delta", self.level_delta)
         cv.one_of(o, "level_delta_mode", self.level_delta_mode,
@@ -247,6 +275,13 @@ class LevelParams:
         cv.positive_int(o, "level_atr_period", self.level_atr_period)
         cv.non_negative_number(o, "level_breakout_buffer_atr", self.level_breakout_buffer_atr)
         cv.non_negative_number(o, "level_stop_atr_mult", self.level_stop_atr_mult)
+        cv.non_negative_number(o, "cluster_merge_atr_mult", self.cluster_merge_atr_mult)
+        cv.non_negative_number(o, "cluster_break_atr_mult", self.cluster_break_atr_mult)
+        cv.positive_int(o, "cluster_max_levels", self.cluster_max_levels)
+        cv.non_negative_number(o, "touch_cluster_mult", self.touch_cluster_mult)
+        cv.non_negative_number(o, "touch_band_mult", self.touch_band_mult)
+        cv.positive_int(o, "touch_min_touches", self.touch_min_touches)
+        cv.non_negative_int(o, "touch_recency_bars", self.touch_recency_bars)
 
 
 # ──────────────────────────────────────────────────────────────────────────────

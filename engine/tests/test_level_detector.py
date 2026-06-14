@@ -1,6 +1,7 @@
-"""Tests for engine.level_detector — the ported support/resistance/pullback
-detector. Absolute mode is a byte-for-byte port of the `ema` project's
-levels.py; the percent/atr modes are tradekit additions.
+"""Tests for engine.levels.pivot_level — the pivot-seeded support/resistance/
+pullback detector (formerly engine.level_detector). Absolute mode is a
+byte-for-byte port of the `ema` project's levels.py; the percent/atr modes are
+tradekit additions.
 """
 
 from __future__ import annotations
@@ -9,7 +10,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from engine.level_detector import (
+from engine.levels.pivot_level import (
     Level,
     detect_all_levels,
     detect_resistance_levels,

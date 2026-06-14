@@ -1,6 +1,20 @@
 # Plan: pluggable level detectors (pivot_level / cluster_level / touch_level)
 
-Status: proposed (not yet implemented) · Date: 2026-06-14
+Status: implemented · Date: 2026-06-14
+
+> Update — what shipped. The engine.levels package is live: base.py (the
+> normalized Level + LevelSource contract + tolerance), pivot_level.py (the moved
+> detector), cluster_level.py and touch_level.py (causal ports), and __init__.py
+> (the LEVEL_SOURCES registry, detect_levels dispatch, LEVEL_SOURCE_NAMES, and the
+> import guard). LevelParams gained the level_detector selector plus the
+> namespaced cluster_* / touch_* knobs; LevelStrategyBase dispatches via
+> detect_levels and consumes confirmed_idx. The old engine/level_detector.py was
+> removed and its import sites migrated. Tests: per-detector golden snapshots
+> (golden_level_detectors.json) plus engine/tests/test_levels.py; full suite green.
+> levels.ipynb was rebuilt as the three-section EDA notebook. Two details landed
+> differently from the sketch below: the registry lives in engine/levels/__init__.py
+> (not strategy_configurator — strategy_configurator only imports LEVEL_SOURCE_NAMES
+> to validate the field), and the causality note is corrected (see that section).
 
 Make horizontal support/resistance detection pluggable: three interchangeable
 detectors behind one contract, selectable per strategy through a single
@@ -148,9 +162,11 @@ def detect_levels(df, cfg): ...            # = level_source_for(cfg.level_detect
 def _validate_level_sources(): ...         # LEVEL_SOURCES keys == LEVEL_SOURCE_NAMES; called at import
 ```
 
-The registry lives in strategy_configurator and imports the adapters from
-engine.levels, which keeps the import direction one-way (no cycle). detect_levels
-is the single entry both level_base and the notebook call.
+The registry lives in engine/levels/__init__.py (co-located with the detectors);
+strategy_configurator imports only LEVEL_SOURCE_NAMES from it to validate the
+field, which keeps the import direction one-way (no cycle, since engine.levels has
+no runtime dependency on strategy_configurator). detect_levels is the single entry
+both level_base and the notebook call.
 
 Accepted trade-off. With all knobs on one class, a knob for an unselected detector
 is validated but silently inert (for example cluster_break_atr_mult does nothing
@@ -160,11 +176,15 @@ knob central and sweepable, which is what was chosen.
 
 ## Causality and the touch_level port
 
-The engine makes look-ahead structurally impossible: Backtester.run feeds each
-on_bar a view truncated to bars 0..i, and test_config_propagation runs every
-strategy with enforce_causality=False and asserts the trades match the enforced
-run. So a detector that reads the whole frame would fail that test — which is
-exactly the safety net that keeps this clean.
+The engine makes look-ahead structurally impossible at the on_bar boundary:
+Backtester.run feeds each on_bar a view truncated to bars 0..i, and
+test_config_propagation runs every strategy with enforce_causality=False and
+asserts the trades match the enforced run. Note this pins that on_bar never peeks
+ahead; it does NOT by itself police the detector's internal causality, because
+prepare() (where detection runs) is identical in both runs. So the detector's own
+causality is a correctness responsibility, enforced two ways: each source computes
+confirmed_idx / invalidated_at from past data only, and the per-detector golden
+snapshots pin their trades byte-for-byte against a drift.
 
 - pivot_level and cluster_level are already causal (ours by construction;
   KeyLevelDetector is a streaming detector with a confirmation delay). They drop
@@ -249,10 +269,14 @@ copy-paste identical across the three sections.
 
 ## Security and cleanliness (tests and guards)
 
-- Causality: cluster_level and touch_level are exercised by the existing
-  enforce_causality True-vs-False assertion in test_config_propagation.py.
-- Golden snapshots: pin level_breakout and level_breakout_inv under each of the
-  three detector keys in test_golden.py.
+- Causality: test_levels.py runs level_breakout and level_breakout_inv under all
+  three detectors and asserts the truncated-view (enforced) run matches the
+  full-view run, plus a contract test that every source's confirmed_idx /
+  invalidated_at are well-formed (confirmation never precedes the seed; death never
+  precedes confirmation). The detectors compute those indices from past data only.
+- Golden snapshots: golden_level_detectors.json pins level_breakout and
+  level_breakout_inv under cluster_level and touch_level (pivot_level stays pinned
+  by the main golden_trades.json), so a port drift fails in test_golden.py.
 - Validation: the new LevelParams fields go through config_validation in
   __post_init__, so a bad value fails at construction in the CLI, a notebook
   replace, or a sweep grid.
@@ -279,19 +303,23 @@ inert-knob trade-off above.)
 New
 - engine/levels/__init__.py, base.py, pivot_level.py, cluster_level.py, touch_level.py
 
-Edited
-- engine/strategy_configurator.py — LEVEL_SOURCE_NAMES; LevelParams fields + validators; LEVEL_SOURCES; level_source_for; detect_levels; _validate_level_sources
-- engine/strategies/level_base.py — dispatch via detect_levels; consume confirmed_idx
-- engine/visualization.py — consumes the extended Level transparently (no behaviour change)
-- engine/tests/test_golden.py — snapshots per detector key
-- engine/tests/test_config_propagation.py and a config-validation test — cover the new detectors and fields
-- strategy_notebooks/levels.ipynb — rebuilt as above
-- CLAUDE.md — update the level-family paragraph
+New (registry + dispatch)
+- engine/levels/__init__.py — LEVEL_SOURCES; LEVEL_SOURCE_NAMES; level_source_for; detect_levels; _validate_level_sources; re-exports
 
-Import migration
-- engine/level_detector.py moves to engine/levels/pivot_level.py. Migrate the import
-  sites outright (level_base, the notebook's detect_all_levels, and any tests); no
-  re-export shim is left behind, for a clean tree.
+Edited
+- engine/strategy_configurator.py — imports LEVEL_SOURCE_NAMES; LevelParams gains level_detector + cluster_* / touch_* fields + validators
+- engine/strategies/level_base.py — dispatch via detect_levels; consume confirmed_idx
+- engine/visualization.py — consumes the extended Level transparently (no behaviour change); docstring
+- engine/core.py, engine/strategies/fractal_breakout.py / level_breakout.py / level_breakout_inv.py — comment/docstring refs
+- engine/tests/test_golden.py — per-detector snapshots (golden_level_detectors.json)
+- engine/tests/test_levels.py (new) — registry, causal contract, selector/knob validation, per-detector runs
+- engine/tests/test_level_detector.py — import path → engine.levels.pivot_level
+- strategy_notebooks/levels.ipynb — rebuilt as the 3-section EDA notebook; other notebooks' refs retargeted
+- CLAUDE.md, docs/DEVELOPMENT.md — level-family paragraph + file tree
+
+Import migration (done)
+- engine/level_detector.py was removed; its contents moved to engine/levels/pivot_level.py
+  and all import sites (level_base, tests, notebooks) were migrated. No re-export shim.
 
 ## Phased rollout (each independently shippable)
 

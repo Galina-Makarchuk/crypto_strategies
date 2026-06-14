@@ -396,7 +396,7 @@ def plot_levels(
     show_invalidated: bool = True,
     title: Optional[str] = None,
 ) -> go.Figure:
-    """Overlay :class:`engine.level_detector.Level` records on a candlestick chart.
+    """Overlay :class:`engine.levels.Level` records on a candlestick chart.
 
     Each level is drawn from its ``start_idx`` candle to its ``invalidated_at``
     candle (or the last candle if still active). ``show_invalidated=False`` hides

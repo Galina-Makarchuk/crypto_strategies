@@ -4,7 +4,7 @@ Detects S/R from **N-bar fractal pivots** via ``indicators.detect_swing_highs`` 
 ``detect_swing_lows`` (a strict ``left``/``right`` window), merged with
 ``indicators.merge_price_levels``. This is the *indicators-layer* level source —
 distinct from ``level_breakout``, which is built on the dedicated, stateful
-``engine.level_detector`` (horizontal S/R with invalidation tracking).
+``engine.levels`` detectors (selectable horizontal S/R detection).
 
 Key properties:
   1. No look-ahead: only uses levels confirmed ≥ `right` bars before current bar.

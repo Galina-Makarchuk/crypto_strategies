@@ -1,9 +1,9 @@
 """Level-breakout strategy — breakout through horizontal S/R levels.
 
-Built on :mod:`engine.level_detector` (the dedicated, stateful horizontal-level
-detector: resistance / support / pullback levels seeded at confirmed pivots and
-tracked forward until invalidated). This is the level-detector member of the
-``level_*`` family — see :class:`engine.strategies.level_base.LevelStrategyBase`.
+Built on the :mod:`engine.levels` package — the dedicated horizontal-level
+detectors, selectable via ``LevelParams.level_detector`` (pivot_level /
+cluster_level / touch_level). This is the level-detector member of the ``level_*``
+family — see :class:`engine.strategies.level_base.LevelStrategyBase`.
 
 Distinct from ``fractal_breakout`` (same breakout *idea*, but its levels come from
 the lighter ``indicators.detect_swing_*`` fractal pivots).

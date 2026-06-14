@@ -27,7 +27,12 @@ engine/
 ├── core.py                      # Typed enums, validation, Signal/Trade/PositionState state machine
 ├── indicators.py                # Pure functions: ATR, EMA, RSI, ADX, SuperTrend, VWAP, swing/level pivots
 ├── swing_detector.py            # ATR-prominence ZigZag swing detector (Swing records + tiers)
-├── level_detector.py            # Support/resistance/pullback level detector (absolute/percent/ATR tolerance)
+├── levels/                      # Horizontal S/R detectors — 3 selectable detectors behind one contract
+│   │                            #   (__init__: registry + detect_levels dispatch + LEVEL_SOURCE_NAMES)
+│   ├── base.py                  #   Normalized Level record + LevelSource contract + tolerance
+│   ├── pivot_level.py           #   Pivot-seeded, invalidation-tracked (resistance/support/pullback)
+│   ├── cluster_level.py         #   Merge-and-break, strength-scored
+│   └── touch_level.py           #   Significance by historical touch count
 ├── exits.py                     # Pluggable exit policies: stops + take-profits, CompositeExit (stop-first)
 ├── strategy_configurator.py     # Per-family *Params (signal knobs) + PARAMS registry + exit-policy catalog (EXIT_PRESETS)
 ├── trade_configurator.py        # TradingConfig: costs, sizing, leverage, direction gate, risk overlays
@@ -43,8 +48,8 @@ engine/
 │   ├── base.py                  # Abstract base: prepare() + on_bar() + exit-policy injection
 │   ├── fractal_breakout.py      # N-bar fractal-pivot S/R breakout (indicators.detect_swing_*)
 │   ├── fractal_breakout_inv.py  # Inverse: fade the fractal breakout
-│   ├── level_base.py            # Shared base for the level_* family (engine.level_detector)
-│   ├── level_breakout.py        # Breakout of horizontal S/R from engine.level_detector
+│   ├── level_base.py            # Shared base for the level_* family (engine.levels, detector selectable)
+│   ├── level_breakout.py        # Breakout of horizontal S/R from engine.levels
 │   ├── level_breakout_inv.py    # Inverse: fade the level breakout
 │   ├── ema_cross.py             # EMA crossover + RSI filter
 │   ├── ema_cross_inv.py         # Inverse EMA crossover
@@ -63,7 +68,7 @@ engine/
 │   ├── swing_breakout.py        # ATR-prominence ZigZag — breakout mode (ported)
 │   └── swing_ml.py              # ML swing-pivot classifier (imitation learning)
 ├── ml/                          # ML pipeline for swing_ml: features, labels, splits, order_flow
-└── tests/                       # pytest: test_core, test_golden, test_level_detector, test_live, test_ml, …
+└── tests/                       # pytest: test_core, test_golden, test_level_detector, test_levels, test_live, test_ml, …
 ```
 
 ## Key Design Decisions

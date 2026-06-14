@@ -1,9 +1,10 @@
 """Inverse Level-Breakout strategy — fade breakouts of horizontal S/R levels.
 
 The mean-reversion mirror of :class:`engine.strategies.level_breakout.\
-LevelBreakoutStrategy`, on the same :mod:`engine.level_detector` level set
-(see :class:`engine.strategies.level_base.LevelStrategyBase`). It bets that
-breakouts fail and price reverts into the range:
+LevelBreakoutStrategy`, on the same :mod:`engine.levels` level set (the detector is
+selectable via ``LevelParams.level_detector``; see
+:class:`engine.strategies.level_base.LevelStrategyBase`). It bets that breakouts
+fail and price reverts into the range:
 
   * Close clears an **overhead** level → **SHORT** (fade the up-breakout).
   * Close breaks an **underlying** level → **LONG**  (fade the breakdown).
