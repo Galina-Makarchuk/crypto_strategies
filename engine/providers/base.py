@@ -7,7 +7,7 @@ oldest-first. Everything downstream of engine.data_configurator.load_data is
 provider-blind, so swapping or adding a provider never touches the backtester,
 strategies, exits, evaluation or visualization.
 
-BybitFetcher (engine/fetcher.py) is the reference implementation. New providers
+BybitFetcher (engine/providers/bybit.py) is the reference implementation. New providers
 (e.g. engine/providers/yahoo.py) translate their vendor's payload to this
 contract internally — their own pagination, rate limits, interval codes,
 authentication and turnover synthesis all stay behind the seam.

@@ -8,8 +8,8 @@ provider = implement the DataProvider contract (see base.py) and register it her
 
 from __future__ import annotations
 
-from ..fetcher import BybitFetcher
 from .base import CONTRACT_COLUMNS, DataProvider, finalize_ohlcv
+from .bybit import BybitFetcher
 from .yahoo import YahooProvider
 
 # Registry: DataSpec.provider value -> provider class. The only place concrete

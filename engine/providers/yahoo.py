@@ -55,6 +55,28 @@ class YahooProvider:
     def close(self) -> None:
         """No persistent session to close (yfinance manages its own)."""
 
+    def is_market_open(self, now: "pd.Timestamp | None" = None) -> bool:
+        """Coarse session guard for live mode, so it doesn't poll a closed venue
+        all weekend (LiveEngine calls this before each tick; absent it the loop is
+        always-open).
+
+        Closed all of Saturday (UTC) and Sunday before ~22:00 UTC (around the CME
+        Globex weekly reopen); open on weekdays. Intentionally permissive — no
+        per-product hours, daily maintenance break or holiday calendar (those are
+        DST / exchange-specific) — so it removes the weekend waste without risking
+        a false close mid-week; an extra weekday tick on a cash index that is
+        actually shut is harmless (a stale fetch, not an error). Note: pointed at a
+        24/7 ticker (e.g. BTC-USD) this would wrongly pause on weekends — the yahoo
+        provider is meant for the non-crypto markets.
+        """
+        now = now if now is not None else pd.Timestamp.now(tz="UTC")
+        weekday = now.weekday()        # Mon=0 … Fri=4, Sat=5, Sun=6
+        if weekday == 5:               # Saturday — closed all day
+            return False
+        if weekday == 6 and now.hour < 22:   # Sunday before the ~22:00 UTC reopen
+            return False
+        return True
+
     def fetch_klines(
         self,
         symbol: str = "ES=F",

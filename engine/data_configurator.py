@@ -142,8 +142,8 @@ def load_data(
     """Return OHLCV candles for ``spec``, reading the on-disk cache when possible.
 
     Reads the cached parquet if it exists and is still fresh; otherwise fetches
-    from Bybit (via :class:`BybitFetcher`) and writes the cache. ``refresh=True``
-    forces a re-download.
+    via the spec's provider (engine.providers; default bybit) and writes the
+    cache. ``refresh=True`` forces a re-download.
 
     Freshness: a range window with an explicit ``end`` is immutable and always
     reused; count-mode and open-ended windows are re-fetched once the cache is

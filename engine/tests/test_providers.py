@@ -180,6 +180,21 @@ class TestYahooFetchGuards:
             YahooProvider().fetch_klines(symbol="GC=F", interval="120")
 
 
+class TestYahooMarketHours:
+    """is_market_open() — the live-mode weekend guard (no per-product calendar)."""
+
+    @pytest.mark.parametrize("ts,expected", [
+        ("2026-06-13 12:00", False),  # Saturday → closed all day
+        ("2026-06-14 10:00", False),  # Sunday before the ~22:00 UTC reopen → closed
+        ("2026-06-14 23:00", True),   # Sunday after reopen → open
+        ("2026-06-15 09:00", True),   # Monday → open
+        ("2026-06-12 18:00", True),   # Friday → open
+    ])
+    def test_weekend_guard(self, ts, expected):
+        now = pd.Timestamp(ts, tz="UTC")
+        assert YahooProvider().is_market_open(now) is expected
+
+
 # ── data_configurator wiring for a second provider ──────────────────────────
 
 

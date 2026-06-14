@@ -1,4 +1,7 @@
-"""Bybit kline fetcher with retry and rate-limiting.
+"""Bybit data provider — kline fetcher with retry and rate-limiting.
+
+The reference engine.providers.DataProvider (registered as "bybit"). Returns the
+canonical UTC OHLCV contract; see engine/providers/base.py.
 
 Production considerations:
 - Exponential backoff on 429/5xx via urllib3 Retry
@@ -20,9 +23,9 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from .core import VALID_CATEGORIES as _CORE_CATEGORIES
-from .core import VALID_INTERVALS as _CORE_INTERVALS
-from .core import validate_interval
+from ..core import VALID_CATEGORIES as _CORE_CATEGORIES
+from ..core import VALID_INTERVALS as _CORE_INTERVALS
+from ..core import validate_interval
 
 logger = logging.getLogger(__name__)
 
