@@ -212,7 +212,7 @@ class FractalParams:
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# Level strategies   ·   level_breakout, level_breakout_inv, + new strategies
+# Level strategies   ·   level_breakout, level_breakout_inv, g_* strategies
 # ════════════════════════════════════════════════════════════════════════════
 # All level strategies trade the horizontal S/R levels from the dedicated
 # engine.levels package. The DETECTOR CONFIG is shared and central: it lives on
@@ -221,7 +221,7 @@ class FractalParams:
 # add ONLY its own signal knobs + its EXITS map, and to pick a per-strategy
 # detector default. A foreign signal knob therefore raises TypeError at
 # dataclasses.replace just like every other family, while the detector seam stays
-# DRY. The new g_* strategies port the level-based models (bounce, squeeze
+# DRY. The g_* strategies port the level-based models (bounce, squeeze
 # breakout, false breakout, range) onto these same detectors.
 @dataclass(frozen=True)
 class LevelParams:
@@ -244,10 +244,15 @@ class LevelParams:
     (validated but unused) under the others. Distinct from the fractal_breakout
     detector. Carries its OWN atr period (level_atr_period). Concrete strategies
     (LevelBreakoutParams, GBounceParams, …) inherit this and add their signal
-    knobs + EXITS + their preferred detector default."""
+    knobs + EXITS + their preferred detector default.
+    
+    The level knobs can be edited in 3 ways:
+    1. Edit on the base = global default → every subclass that doesn't re-declare that field inherits the new value.
+    2. Re-declare in a subclass = per-strategy override → changes it for that one strategy only.
+    3. Override per-run in a notebook via dataclasses.replace(...), or a grid sweep"""
 
     # Detector selection — pivot_level | cluster_level | touch_level.
-    level_detector: str = "pivot_level"
+    level_detector: str = "pivot_level"     # default only, does not force its value on subclasses (they can freely re-declare it with own value)
 
     # Shared knobs (every detector maps these).
     level_pivot_window: int = 3             # symmetric pivot window for all detectors
