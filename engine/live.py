@@ -15,11 +15,13 @@ from __future__ import annotations
 import logging
 import signal
 import time
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 
 
 from .core import ExitReason, PositionState, Trade
+from .notify import NotifyEvent, Notifier, in_jupyter, make_notifiers
 from .providers import make_provider, resolve_category, validate_spec
 from .live_records import LiveRecords
 from .strategies.base import BaseStrategy
@@ -30,17 +32,6 @@ logger = logging.getLogger(__name__)
 
 _MAX_SIGNALS_KEPT = 500  # rolling window size
 _CIRCUIT_BREAKER_LIMIT = 10  # consecutive failures before stopping
-
-
-def _in_jupyter() -> bool:
-    """True only inside a Jupyter/VS Code kernel (ZMQInteractiveShell), where a
-    rich HTML link can be rendered. Terminal IPython and plain scripts → False."""
-    try:
-        from IPython import get_ipython  # noqa: PLC0415 (optional dep, lazy)
-        shell = get_ipython()
-        return shell is not None and shell.__class__.__name__ == "ZMQInteractiveShell"
-    except Exception:
-        return False
 
 
 class LiveEngine:
@@ -58,6 +49,7 @@ class LiveEngine:
         chart_path: str = "live_chart.html",
         db_path: str = "trading_state.db",
         trading_config: TradingConfig | None = None,
+        notifiers: str | Sequence[Notifier] | None = None,
     ):
         validate_spec(provider, interval, category)
         self.strategy = strategy
@@ -89,6 +81,20 @@ class LiveEngine:
         self._sized_trade_ids: set[str] = self._store.known_trade_ids()
         self._running = True
         self._consecutive_failures = 0
+
+        # Signal alerts (live only; places no orders). A string spec is resolved
+        # here so notebooks/CLI can pass notifiers="browser,desktop"; a sequence
+        # of Notifier objects (tests, advanced use) is taken as-is.
+        if isinstance(notifiers, str):
+            notifiers = make_notifiers(notifiers)
+        self._notifiers: list[Notifier] = list(notifiers) if notifiers else []
+        # Dedup across the per-tick replay (which re-derives the whole window):
+        # the first tick primes these with everything already in the window, so
+        # historical trades and a restart-recovered position never alert. Only
+        # signals that fire on later ticks notify.
+        self._notified_entry_ids: set[str] = set()
+        self._notified_exit_ids: set[str] = set()
+        self._notify_primed = False
 
     def _seed_state_policy(self, state: PositionState) -> None:
         """Apply trade-level policy (cost, direction gate, daily-loss cap) onto a
@@ -129,6 +135,11 @@ class LiveEngine:
             self.poll_seconds,
         )
         warn_if_inverse_gated(self.strategy.name, self.trading_config)
+        if self._notifiers:
+            logger.info(
+                "Signal alerts: %s",
+                ", ".join(type(n).__name__ for n in self._notifiers),
+            )
         self._announce_chart()
 
         while self._running:
@@ -178,7 +189,7 @@ class LiveEngine:
         writes it."""
         uri = Path(self.chart_path).resolve().as_uri()
         label = f"{self.symbol} {self.interval}m {self.strategy.name}"
-        if _in_jupyter():
+        if in_jupyter():
             from IPython.display import display, HTML  # noqa: PLC0415 (optional dep, lazy)
             display(HTML(
                 f'<a href="{uri}" target="_blank" rel="noopener">'
@@ -244,6 +255,11 @@ class LiveEngine:
         # compound the paper-equity curve. Only *new* closures are written, so the
         # per-tick write volume is bounded (no full-history re-save).
         self._apply_equity_to_new_closures()
+
+        # Alert on signals that are new this tick (runs after sizing so exit
+        # alerts carry pnl_currency / equity_after). No-op if no notifiers.
+        if self._notifiers:
+            self._emit_notifications(state)
 
         if state.suppressed_entries:
             logger.info(
@@ -387,6 +403,87 @@ class LiveEngine:
                 trade.pnl_currency,
                 self._equity,
             )
+
+    def _emit_notifications(self, state: PositionState) -> None:
+        """Fire entry/exit alerts for signals that are NEW since the last tick.
+
+        The first tick after (re)start is a priming pass: every trade already in
+        the candle window — and a position carried across a restart — is recorded
+        as already-seen and alerts nothing, so there's never a startup
+        notification storm. From the second tick on, a closure or a fresh open
+        not seen before alerts exactly once (deduped by the stable trade id, the
+        same id the equity layer uses). A signal that fires while the engine is
+        down is persisted to the DB/chart but not alerted — it's history by the
+        time the loop resumes."""
+        closed = [t for t in state.closed_trades if t.is_closed]
+        open_trade = state.current_trade
+
+        if not self._notify_primed:
+            self._notified_entry_ids.update(t.trade_id for t in closed)
+            self._notified_exit_ids.update(t.trade_id for t in closed)
+            if open_trade is not None:
+                self._notified_entry_ids.add(open_trade.trade_id)
+            self._notify_primed = True
+            return
+
+        # A trade is normally seen open first (entry alert via the open-trade
+        # branch below) and closed on a later tick (exit alert here). But if all
+        # of a trade's bars close between two notification ticks — e.g. after a
+        # circuit-breaker backoff, or a poll interval >= the bar interval — the
+        # engine first sees it already closed: emit its entry alert here too, and
+        # before the exit, so the pair still reads entry → exit in order.
+        for trade in closed:
+            if trade.trade_id not in self._notified_entry_ids:
+                self._notified_entry_ids.add(trade.trade_id)
+                self._notify(self._entry_event(trade))
+            if trade.trade_id not in self._notified_exit_ids:
+                self._notified_exit_ids.add(trade.trade_id)
+                self._notify(self._exit_event(trade))
+
+        if (
+            open_trade is not None
+            and open_trade.trade_id not in self._notified_entry_ids
+        ):
+            self._notified_entry_ids.add(open_trade.trade_id)
+            self._notify(self._entry_event(open_trade))
+
+    def _entry_event(self, trade: Trade) -> NotifyEvent:
+        return NotifyEvent(
+            kind="entry",
+            strategy=self.strategy.name,
+            symbol=self.symbol,
+            interval=self.interval,
+            direction=trade.direction.value,
+            price=trade.entry_price,
+            timestamp=trade.entry_ts,
+            label=f"{trade.direction.value.capitalize()} entry",
+        )
+
+    def _exit_event(self, trade: Trade) -> NotifyEvent:
+        return NotifyEvent(
+            kind="exit",
+            strategy=self.strategy.name,
+            symbol=self.symbol,
+            interval=self.interval,
+            direction=trade.direction.value,
+            price=trade.exit_price,
+            timestamp=trade.exit_ts,
+            label=f"{trade.direction.value.capitalize()} exit",
+            exit_reason=trade.exit_reason.value if trade.exit_reason else None,
+            pnl_bps=trade.pnl_bps,
+            pnl_currency=trade.pnl_currency,
+            equity_after=trade.equity_after,
+        )
+
+    def _notify(self, event: NotifyEvent) -> None:
+        """Dispatch one event to every notifier. A notifier that raises is logged
+        and skipped, so a flaky alert channel can never break the trading loop or
+        trip the circuit breaker."""
+        for notifier in self._notifiers:
+            try:
+                notifier.notify(event)
+            except Exception:  # noqa: BLE001 — alerts must never break the loop
+                logger.exception("Notifier %s failed", type(notifier).__name__)
 
     def _cleanup(self) -> None:
         logger.info("Cleaning up …")

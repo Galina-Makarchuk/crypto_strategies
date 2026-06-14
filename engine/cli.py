@@ -211,6 +211,17 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
+        "--notify",
+        default=None,
+        help=(
+            "Live-mode signal alerts: comma-separated channels "
+            "(browser,desktop,telegram). 'browser' needs a Jupyter kernel "
+            "(not the CLI); 'desktop' is macOS-only; 'telegram' reads "
+            "TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID from the environment. "
+            "Unusable channels are skipped with a warning."
+        ),
+    )
+    parser.add_argument(
         "--log-level",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
         default="INFO",
@@ -364,6 +375,7 @@ def _run_live(strategy, trading_config, spec, args) -> int:
         chart_path=str(chart_path),
         db_path=str(db_path),
         trading_config=trading_config,
+        notifiers=args.notify,   # comma-separated channels; resolved in LiveEngine
     )
     engine.run()
     return 0
