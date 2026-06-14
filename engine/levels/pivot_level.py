@@ -273,20 +273,26 @@ def detect_all_levels(
 
 def pivot_level_source(df: pd.DataFrame, cfg) -> dict[str, list[Level]]:
     """The :data:`engine.levels.LevelSource` adapter for ``pivot_level``: maps the
-    shared :class:`~engine.strategy_configurator.LevelParams` knobs onto
-    :func:`detect_all_levels`. Returns all three families; the strategy base picks
-    which to use (``level_use_pullback``)."""
+    :class:`~engine.strategy_configurator.LevelParams` knobs onto
+    :func:`detect_all_levels`. Each family takes its per-family override
+    (``level_delta_resistance`` etc.) when set, else falls back to the shared knob
+    (``level_delta`` / ``level_invalidation_candles`` / ``level_pivot_window``).
+    Returns all three families; the strategy base picks which to use
+    (``level_use_pullback``)."""
+    def _f(override, shared):
+        return shared if override is None else override
+
     return detect_all_levels(
         df,
-        delta_resistance=cfg.level_delta,
-        delta_support=cfg.level_delta,
-        delta_pullback=cfg.level_delta,
-        inval_resistance=cfg.level_invalidation_candles,
-        inval_support=cfg.level_invalidation_candles,
-        inval_pullback=cfg.level_invalidation_candles,
-        pivot_window_resistance=cfg.level_pivot_window,
-        pivot_window_support=cfg.level_pivot_window,
-        pivot_window_pullback=cfg.level_pivot_window,
+        delta_resistance=_f(cfg.level_delta_resistance, cfg.level_delta),
+        delta_support=_f(cfg.level_delta_support, cfg.level_delta),
+        delta_pullback=_f(cfg.level_delta_pullback, cfg.level_delta),
+        inval_resistance=_f(cfg.level_inval_resistance, cfg.level_invalidation_candles),
+        inval_support=_f(cfg.level_inval_support, cfg.level_invalidation_candles),
+        inval_pullback=_f(cfg.level_inval_pullback, cfg.level_invalidation_candles),
+        pivot_window_resistance=_f(cfg.level_pivot_window_resistance, cfg.level_pivot_window),
+        pivot_window_support=_f(cfg.level_pivot_window_support, cfg.level_pivot_window),
+        pivot_window_pullback=_f(cfg.level_pivot_window_pullback, cfg.level_pivot_window),
         delta_mode=cfg.level_delta_mode,
         atr_period=cfg.level_atr_period,
     )

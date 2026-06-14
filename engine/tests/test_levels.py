@@ -154,5 +154,49 @@ class TestStrategiesUnderEachDetector:
         assert _trade_sig(enforced) == _trade_sig(unenforced)
 
 
+class TestPivotPerFamilyOverrides:
+    """pivot_level per-family overrides (None falls back to the shared knob), so
+    resistance / support / pullback can carry distinct tolerances, invalidation
+    budgets and pivot windows — reproducing the standalone detector's granularity."""
+
+    def test_none_equals_shared(self):
+        df = _ohlcv()
+        base = params_for("level_breakout")
+        a = detect_levels(df, base)["resistance"]
+        b = detect_levels(df, dataclasses.replace(
+            base,
+            level_delta_resistance=base.level_delta,
+            level_inval_resistance=base.level_invalidation_candles,
+            level_pivot_window_resistance=base.level_pivot_window,
+        ))["resistance"]
+        key = lambda ls: [(l.price, l.confirmed_idx, l.invalidated_at) for l in ls]
+        assert key(a) == key(b)   # explicit per-family == shared fallback
+
+    def test_override_isolated_to_its_family(self):
+        df = _ohlcv()
+        base = params_for("level_breakout")
+        a = detect_levels(df, base)
+        c = detect_levels(df, dataclasses.replace(base, level_pivot_window_resistance=5))
+        assert len(c["resistance"]) != len(a["resistance"])   # the targeted family changes
+        assert len(c["support"]) == len(a["support"])         # others untouched
+
+    @pytest.mark.parametrize("factory", [
+        lambda: LevelParams(level_delta_support=-1.0),          # delta must be non-negative
+        lambda: LevelParams(level_inval_pullback=0),            # inval must be a positive int
+        lambda: LevelParams(level_pivot_window_resistance=0),   # window must be a positive int
+    ])
+    def test_bad_per_family_values_raise(self, factory):
+        with pytest.raises(ValueError):
+            factory()
+
+    @pytest.mark.parametrize("factory", [
+        lambda: LevelParams(level_delta_pullback=None),         # None = use the shared knob
+        lambda: LevelParams(level_delta_resistance=0.0),        # zero tolerance allowed
+        lambda: LevelParams(level_inval_pullback=10),           # the old per-family pullback budget
+    ])
+    def test_valid_per_family_values_pass(self, factory):
+        factory()  # must not raise
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

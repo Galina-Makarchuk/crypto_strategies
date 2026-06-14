@@ -246,6 +246,19 @@ class LevelParams:
     level_breakout_buffer_atr: float = 0.0  # close must clear the level by this ×ATR to trigger
     level_stop_atr_mult: float = 1.5        # level_breakout entry stop = broken level ∓ mult·ATR (structural)
 
+    # pivot_level per-family overrides (None -> use the shared knob above). Let the
+    # three families carry distinct tolerances / invalidation budgets / pivot
+    # windows, the way the standalone detector exposed them. pivot_level-only.
+    level_delta_resistance: float | None = None
+    level_delta_support: float | None = None
+    level_delta_pullback: float | None = None
+    level_inval_resistance: int | None = None
+    level_inval_support: int | None = None
+    level_inval_pullback: int | None = None
+    level_pivot_window_resistance: int | None = None
+    level_pivot_window_support: int | None = None
+    level_pivot_window_pullback: int | None = None
+
     # cluster_level knobs (ATR-based merge + close-through break).
     cluster_merge_atr_mult: float = 0.5     # merge a pivot into a level within this ×ATR
     cluster_break_atr_mult: float = 0.1     # close must clear the level by this ×ATR to break it
@@ -275,6 +288,12 @@ class LevelParams:
         cv.positive_int(o, "level_atr_period", self.level_atr_period)
         cv.non_negative_number(o, "level_breakout_buffer_atr", self.level_breakout_buffer_atr)
         cv.non_negative_number(o, "level_stop_atr_mult", self.level_stop_atr_mult)
+        for nm in ("level_delta_resistance", "level_delta_support", "level_delta_pullback"):
+            cv.optional_non_negative_number(o, nm, getattr(self, nm))
+        for nm in ("level_inval_resistance", "level_inval_support", "level_inval_pullback",
+                   "level_pivot_window_resistance", "level_pivot_window_support",
+                   "level_pivot_window_pullback"):
+            cv.optional_positive_int(o, nm, getattr(self, nm))
         cv.non_negative_number(o, "cluster_merge_atr_mult", self.cluster_merge_atr_mult)
         cv.non_negative_number(o, "cluster_break_atr_mult", self.cluster_break_atr_mult)
         cv.positive_int(o, "cluster_max_levels", self.cluster_max_levels)

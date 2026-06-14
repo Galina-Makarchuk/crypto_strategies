@@ -56,6 +56,11 @@ def optional_positive_number(owner: str, name: str, value) -> None:
             "None or a positive number (> 0)")
 
 
+def optional_non_negative_number(owner: str, name: str, value) -> None:
+    require(owner, name, value, value is None or (_is_num(value) and value >= 0),
+            "None or a non-negative number (>= 0)")
+
+
 def positive_number(owner: str, name: str, value) -> None:
     require(owner, name, value, _is_num(value) and value > 0,
             "a positive number (> 0)")
