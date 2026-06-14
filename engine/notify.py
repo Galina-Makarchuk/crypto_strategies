@@ -16,7 +16,7 @@ misconfigured run degrades to fewer alerts instead of crashing the loop:
   desktop  — a native macOS notification banner + sound via ``osascript``.
              Skipped off macOS.
   telegram — a message to a Telegram chat (reaches phone + desktop). Skipped
-             unless both env vars below are set.
+             unless both env vars below are set (it needs credentials to activate).
 
 Secrets are read from the environment, never stored here:
   TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID

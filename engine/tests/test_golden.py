@@ -38,6 +38,10 @@ STRATEGIES = {
     "fractal_breakout_inv": S.InverseFractalBreakoutStrategy,
     "level_breakout": S.LevelBreakoutStrategy,
     "level_breakout_inv": S.InverseLevelBreakoutStrategy,
+    "g_bounce": S.GBounceStrategy,
+    "g_breakout": S.GBreakoutStrategy,
+    "g_breakout_false": S.GBreakoutFalseStrategy,
+    "g_range": S.GRangeStrategy,
     "ema": S.EMACrossoverStrategy,
     "ema_inv": S.InverseEMACrossoverStrategy,
     "ema_adaptive": S.AdaptiveEMACrossoverStrategy,
@@ -136,6 +140,60 @@ def test_impulse_flag_crafted_parity():
     assert _impulse_signature() == json.loads(IMPULSE_GOLDEN.read_text())
 
 
+# ── Crafted golden: g_breakout's compression → breakout gate ───────────────────
+# Like impulse_flag, g_breakout yields 0 trades on _golden_df (which has no tight
+# compressions to squeeze), so this dedicated set exercises its squeeze + breakout
+# + structural-stop paths on an explicit consolidation-into-level pattern.
+G_BREAKOUT_GOLDEN = pathlib.Path(__file__).parent / "golden_g_breakout.json"
+
+
+def _squeeze_df(n: int = 900) -> pd.DataFrame:
+    """Repeated up-leg (seeds a resistance pivot) → pullback → tight multi-bar
+    squeeze creeping just under the level → breakout bar closing above it."""
+    rng = np.random.RandomState(7)
+    rows = []
+    price = 100.0
+    while len(rows) < n:
+        for _ in range(5):                                 # up-leg to a peak (normal bars)
+            o = price; c = price + rng.uniform(0.6, 1.1)
+            h = max(o, c) + abs(rng.randn()) * 0.15; l = min(o, c) - abs(rng.randn()) * 0.15
+            rows.append((o, h, l, c, 12)); price = c
+        peak = price + 0.4
+        rows.append((price, peak, price - 0.2, price - 0.1, 12)); price = price - 0.1  # pivot-high bar
+        for _ in range(4):                                 # pullback below the level
+            o = price; c = price - rng.uniform(0.5, 0.9)
+            h = max(o, c) + abs(rng.randn()) * 0.15; l = min(o, c) - abs(rng.randn()) * 0.15
+            rows.append((o, h, l, c, 12)); price = c
+        for _ in range(6):                                 # tight squeeze toward the peak
+            o = price; c = min(price + (peak - 0.25 - price) * 0.4 + rng.randn() * 0.03, peak - 0.12)
+            h = max(o, c) + 0.05; l = min(o, c) - 0.05
+            rows.append((o, h, l, c, 6)); price = c
+        o = price; c = peak + 0.6                           # breakout bar
+        rows.append((o, c + 0.1, o - 0.1, c, 30)); price = c
+        for _ in range(3):                                 # drift to separate blocks
+            o = price; c = price + rng.randn() * 0.3
+            h = max(o, c) + 0.1; l = min(o, c) - 0.1
+            rows.append((o, h, l, c, 10)); price = c
+    rows = rows[:n]
+    idx = pd.date_range("2024-01-01", periods=n, freq="5min", tz="UTC")
+    df = pd.DataFrame(rows, columns=["open", "high", "low", "close", "volume"], index=idx)
+    return df.assign(turnover=df["close"] * df["volume"])
+
+
+def _g_breakout_signature() -> list:
+    strat = S.GBreakoutStrategy(params_for("g_breakout"))
+    return _trades_of(Backtester(strat, trading_config=TradingConfig()).run(_squeeze_df(), interval="5"))
+
+
+def _write_g_breakout_fixture() -> None:
+    G_BREAKOUT_GOLDEN.write_text(json.dumps(_g_breakout_signature(), indent=1))
+    print("wrote", G_BREAKOUT_GOLDEN.name, len(_g_breakout_signature()), "trades")
+
+
+def test_g_breakout_crafted_parity():
+    assert _g_breakout_signature() == json.loads(G_BREAKOUT_GOLDEN.read_text())
+
+
 def _signature(strat_cls) -> list:
     strat = strat_cls(params_for(strat_cls.name))   # per-strategy params; values unchanged
     result = Backtester(strat, trading_config=TradingConfig()).run(_golden_df(), interval="15")
@@ -169,10 +227,18 @@ def test_golden_parity(name):
 # the two ported detectors so a drift in the cluster_level / touch_level port
 # fails here. Keyed "<strategy>:<detector>".
 LEVEL_DETECTOR_GOLDEN = pathlib.Path(__file__).parent / "golden_level_detectors.json"
+# Each level strategy's DEFAULT detector is already pinned by the main fixture; these
+# pin it under its two NON-default detectors so a drift in any detector port fails
+# here. Keyed "<strategy>:<detector>". g_breakout is omitted — it yields 0 trades on
+# _golden_df (no compression to squeeze); its crafted squeeze fixture covers it.
+_LEVEL_DETECTOR_STRATS = (
+    "level_breakout", "level_breakout_inv", "g_bounce", "g_breakout_false", "g_range",
+)
 _LEVEL_DETECTOR_CASES = [
     (sname, det)
-    for sname in ("level_breakout", "level_breakout_inv")
-    for det in ("cluster_level", "touch_level")
+    for sname in _LEVEL_DETECTOR_STRATS
+    for det in ("pivot_level", "cluster_level", "touch_level")
+    if det != params_for(sname).level_detector
 ]
 
 
@@ -198,4 +264,5 @@ def test_golden_level_detectors(sname, det):
 if __name__ == "__main__":
     _write_fixture()
     _write_impulse_fixture()
+    _write_g_breakout_fixture()
     _write_level_detector_fixture()

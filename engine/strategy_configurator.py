@@ -211,17 +211,29 @@ class FractalParams:
         cv.positive_number(o, "merge_tolerance", self.merge_tolerance)
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Level breakout   ·   level_breakout, level_breakout_inv
-# ──────────────────────────────────────────────────────────────────────────────
+# ════════════════════════════════════════════════════════════════════════════
+# Level strategies   ·   level_breakout, level_breakout_inv, + new strategies
+# ════════════════════════════════════════════════════════════════════════════
+# All level strategies trade the horizontal S/R levels from the dedicated
+# engine.levels package. The DETECTOR CONFIG is shared and central: it lives on
+# the LevelParams base below, so the three interchangeable detectors and their
+# knobs are defined once. Each concrete strategy then subclasses LevelParams to
+# add ONLY its own signal knobs + its EXITS map, and to pick a per-strategy
+# detector default. A foreign signal knob therefore raises TypeError at
+# dataclasses.replace just like every other family, while the detector seam stays
+# DRY. The new g_* strategies port the level-based models (bounce, squeeze
+# breakout, false breakout, range) onto these same detectors.
 @dataclass(frozen=True)
 class LevelParams:
-    """Horizontal S/R from the dedicated engine.levels package. The detector is
-    selectable via level_detector (chosen like any other knob, swept like any
-    other field):
+    """Shared, central horizontal-S/R DETECTOR configuration for the level family.
+
+    This is the base every level strategy subclasses; it owns only the detector
+    seam (no per-strategy signal knobs). The detector is selectable via
+    level_detector (chosen like any other knob, swept like any other field):
 
       pivot_level   — pivot-seeded, invalidation-tracked (resistance/support/
-                      pullback); the default and the only one with a pullback family.
+                      pullback); the base default and the only one with a
+                      pullback family.
       cluster_level — merges nearby pivots into one level; dies on a decisive
                       close-through break; reads the cluster_* knobs.
       touch_level   — significance by historical touch count; reads the touch_*
@@ -230,8 +242,9 @@ class LevelParams:
     All three read the shared level_* knobs (pivot window, ATR period, tolerance);
     the cluster_*/touch_* knobs are read only by their own detector and are inert
     (validated but unused) under the others. Distinct from the fractal_breakout
-    detector. Family has room to grow (level_bounce / level_retest). Carries its
-    OWN atr period (level_atr_period)."""
+    detector. Carries its OWN atr period (level_atr_period). Concrete strategies
+    (LevelBreakoutParams, GBounceParams, …) inherit this and add their signal
+    knobs + EXITS + their preferred detector default."""
 
     # Detector selection — pivot_level | cluster_level | touch_level.
     level_detector: str = "pivot_level"
@@ -243,8 +256,6 @@ class LevelParams:
     level_invalidation_candles: int = 3     # pivot_level: bracket count before a level dies
     level_atr_period: int = 14              # ATR period (level_delta_mode='atr' + exit/sizing ATR)
     level_use_pullback: bool = False        # pivot_level: fold the pullback family into the S/R set
-    level_breakout_buffer_atr: float = 0.0  # close must clear the level by this ×ATR to trigger
-    level_stop_atr_mult: float = 1.5        # level_breakout entry stop = broken level ∓ mult·ATR (structural)
 
     # pivot_level per-family overrides (None -> use the shared knob above). Let the
     # three families carry distinct tolerances / invalidation budgets / pivot
@@ -270,15 +281,8 @@ class LevelParams:
     touch_min_touches: int = 3              # touches before a level becomes observable
     touch_recency_bars: int = 0             # 0 = keep all; else drop levels untouched in the last N bars
 
-    EXITS: ClassVar[dict[str, str]] = {
-        # structural stop anchored on the broken level (entry stop_price) + 2R;
-        # the inverse fades the breakout: ATR stop from entry + 2R (no level).
-        "level_breakout": "structural_rr2",
-        "level_breakout_inv": "atr_stop_rr2",
-    }
-
     def __post_init__(self) -> None:
-        o = "LevelParams"
+        o = type(self).__name__
         cv.one_of(o, "level_detector", self.level_detector, LEVEL_SOURCE_NAMES)
         cv.positive_int(o, "level_pivot_window", self.level_pivot_window)
         cv.non_negative_number(o, "level_delta", self.level_delta)
@@ -286,8 +290,6 @@ class LevelParams:
                   ("absolute", "percent", "atr"))
         cv.positive_int(o, "level_invalidation_candles", self.level_invalidation_candles)
         cv.positive_int(o, "level_atr_period", self.level_atr_period)
-        cv.non_negative_number(o, "level_breakout_buffer_atr", self.level_breakout_buffer_atr)
-        cv.non_negative_number(o, "level_stop_atr_mult", self.level_stop_atr_mult)
         for nm in ("level_delta_resistance", "level_delta_support", "level_delta_pullback"):
             cv.optional_non_negative_number(o, nm, getattr(self, nm))
         for nm in ("level_inval_resistance", "level_inval_support", "level_inval_pullback",
@@ -301,6 +303,145 @@ class LevelParams:
         cv.non_negative_number(o, "touch_band_mult", self.touch_band_mult)
         cv.positive_int(o, "touch_min_touches", self.touch_min_touches)
         cv.non_negative_int(o, "touch_recency_bars", self.touch_recency_bars)
+
+
+@dataclass(frozen=True)
+class LevelBreakoutParams(LevelParams):
+    """level_breakout — breakout through a horizontal level. Structural stop
+    anchored on the broken level (entry stop_price) + 2R target."""
+
+    level_detector: str = "pivot_level"
+    level_breakout_buffer_atr: float = 0.0  # close must clear the level by this ×ATR to trigger
+    level_stop_atr_mult: float = 1.5        # entry stop = broken level ∓ mult·ATR (structural)
+
+    EXITS: ClassVar[dict[str, str]] = {"level_breakout": "structural_rr2"}
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        o = type(self).__name__
+        cv.non_negative_number(o, "level_breakout_buffer_atr", self.level_breakout_buffer_atr)
+        cv.non_negative_number(o, "level_stop_atr_mult", self.level_stop_atr_mult)
+
+
+@dataclass(frozen=True)
+class LevelBreakoutInvParams(LevelParams):
+    """level_breakout_inv — fade breakouts of a horizontal level. No broken level
+    to anchor against on the fade side, so the stop is a plain ATR stop from entry
+    (preset atr_stop_rr2)."""
+
+    level_detector: str = "pivot_level"
+    level_breakout_buffer_atr: float = 0.0  # close must clear the level by this ×ATR to trigger the fade
+
+    EXITS: ClassVar[dict[str, str]] = {"level_breakout_inv": "atr_stop_rr2"}
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        cv.non_negative_number(type(self).__name__, "level_breakout_buffer_atr",
+                               self.level_breakout_buffer_atr)
+
+
+@dataclass(frozen=True)
+class GBounceParams(LevelParams):
+    """g_bounce — bounce (rejection) off a horizontal level. Enter on a confirmed
+    rejection back into the range (the bar's extreme tests the level within an ATR
+    band and the close finishes back on the original side, pressing into the
+    level). Structural stop just beyond the level, 3R target. Ported from the
+    level-bounce model onto the engine.levels detectors; defaults to touch_level
+    (significance by touch count) for stable, multi-touch levels."""
+
+    level_detector: str = "touch_level"
+    g_bounce_tol_atr: float = 0.25          # bar extreme must come within this ×ATR of the level
+    g_bounce_stop_buffer_atr: float = 0.5   # stop placed beyond the level by this ×ATR
+
+    EXITS: ClassVar[dict[str, str]] = {"g_bounce": "structural_rr3"}
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        o = type(self).__name__
+        cv.non_negative_number(o, "g_bounce_tol_atr", self.g_bounce_tol_atr)
+        cv.non_negative_number(o, "g_bounce_stop_buffer_atr", self.g_bounce_stop_buffer_atr)
+
+
+@dataclass(frozen=True)
+class GBreakoutParams(LevelParams):
+    """g_breakout — squeeze breakout. A breakout through a level that is preceded
+    by a tight consolidation (small bars crawling into the level) with oversized
+    ("paranormal") bars rejected — the compression pre-break filter the plain
+    level_breakout omits. Structural stop beyond the level, 3R target. Ported from
+    the level-breakout model; defaults to cluster_level (decisive merged levels)."""
+
+    level_detector: str = "cluster_level"
+    g_breakout_buffer_atr: float = 0.05      # close must clear the level by this ×ATR
+    g_breakout_stop_atr_mult: float = 0.5    # structural stop = broken level ∓ mult·ATR
+    g_breakout_consol_bars: int = 5          # bars of pre-break approach to inspect
+    g_breakout_consol_max_atr: float = 0.6   # mean approach-bar range must be <= this ×ATR (tight)
+    g_breakout_paranormal_atr: float = 2.0   # reject if any approach bar's range >= this ×ATR
+
+    EXITS: ClassVar[dict[str, str]] = {"g_breakout": "structural_rr3"}
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        o = type(self).__name__
+        cv.non_negative_number(o, "g_breakout_buffer_atr", self.g_breakout_buffer_atr)
+        cv.non_negative_number(o, "g_breakout_stop_atr_mult", self.g_breakout_stop_atr_mult)
+        cv.positive_int(o, "g_breakout_consol_bars", self.g_breakout_consol_bars)
+        cv.positive_number(o, "g_breakout_consol_max_atr", self.g_breakout_consol_max_atr)
+        cv.positive_number(o, "g_breakout_paranormal_atr", self.g_breakout_paranormal_atr)
+
+
+@dataclass(frozen=True)
+class GBreakoutFalseParams(LevelParams):
+    """g_breakout_false — false-breakout reversal. Price pokes through a level but
+    fails to hold and closes back inside; trade the reversal. Mode selects how the
+    failed break is recognized: single (one-bar poke), two_bar (a bar closes
+    beyond then the next reclaims), complex (a multi-bar excursion is reclaimed).
+    Structural stop just beyond the false-break extreme, 3R target. Defaults to
+    cluster_level, whose decisive close-through break keeps a level alive through a
+    failed wick (so the reversal is observable)."""
+
+    level_detector: str = "cluster_level"
+    g_breakout_false_mode: str = "single"          # single | two_bar | complex
+    g_breakout_false_max_depth_atr: float = 0.5    # max poke depth beyond the level (×ATR)
+    g_breakout_false_consol_max_bars: int = 5      # complex mode: max bars on the break side
+    g_breakout_false_stop_buffer_atr: float = 0.1  # stop placed beyond the false-break extreme (×ATR)
+
+    EXITS: ClassVar[dict[str, str]] = {"g_breakout_false": "structural_rr3"}
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        o = type(self).__name__
+        cv.one_of(o, "g_breakout_false_mode", self.g_breakout_false_mode,
+                  ("single", "two_bar", "complex"))
+        cv.non_negative_number(o, "g_breakout_false_max_depth_atr", self.g_breakout_false_max_depth_atr)
+        cv.positive_int(o, "g_breakout_false_consol_max_bars", self.g_breakout_false_consol_max_bars)
+        cv.non_negative_number(o, "g_breakout_false_stop_buffer_atr", self.g_breakout_false_stop_buffer_atr)
+
+
+@dataclass(frozen=True)
+class GRangeParams(LevelParams):
+    """g_range — range / channel fade. When two horizontal levels bracket price,
+    buy near the lower edge and sell near the upper edge of a wide-enough channel,
+    targeting the far edge with a cushion. Structural stop beyond the near edge,
+    structural (far-edge) target. Ported from the range-trading model; defaults to
+    cluster_level, whose merged pivots give clean, stable channel edges."""
+
+    level_detector: str = "cluster_level"
+    g_range_min_width_atr: float = 4.0       # channel must be at least this wide (×ATR) to trade
+    g_range_entry_zone: float = 0.30         # act only in the bottom/top this fraction of the channel
+    g_range_tol_atr: float = 0.25            # how close to the edge counts as a test (×ATR)
+    g_range_stop_buffer_atr: float = 0.5     # stop beyond the near edge (×ATR)
+    g_range_target_cushion: float = 0.20     # leave this fraction of the channel before the far edge
+
+    EXITS: ClassVar[dict[str, str]] = {"g_range": "structural"}
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        o = type(self).__name__
+        cv.positive_number(o, "g_range_min_width_atr", self.g_range_min_width_atr)
+        cv.non_negative_number(o, "g_range_entry_zone", self.g_range_entry_zone)
+        cv.non_negative_number(o, "g_range_tol_atr", self.g_range_tol_atr)
+        cv.non_negative_number(o, "g_range_stop_buffer_atr", self.g_range_stop_buffer_atr)
+        cv.non_negative_number(o, "g_range_target_cushion", self.g_range_target_cushion)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -561,6 +702,7 @@ EXIT_PRESETS: dict[str, "callable[[], ExitPolicy]"] = {
     # List the stop before any target for stop-first precedence on ambiguous bars.
     "atr_stop_rr2":    lambda: CompositeExit(AtrStop(1.5), RrTarget(2.0)),
     "structural_rr2":  lambda: CompositeExit(StructuralStop(), RrTarget(2.0)),
+    "structural_rr3":  lambda: CompositeExit(StructuralStop(), RrTarget(3.0)),  # g_bounce / g_breakout / g_breakout_false
     "fixed_2pct_rr3":  lambda: CompositeExit(FixedPctStop(2.0), RrTarget(3.0)),
     "fixed_1pct_rr3":  lambda: CompositeExit(FixedPctStop(1.0), RrTarget(3.0)),  # ema_touch default (1% stop, 3R)
 
@@ -596,8 +738,12 @@ PARAMS: dict[str, type] = {
     "ema_touch": EmaTouchParams,
     "fractal_breakout": FractalParams,
     "fractal_breakout_inv": FractalParams,
-    "level_breakout": LevelParams,
-    "level_breakout_inv": LevelParams,
+    "level_breakout": LevelBreakoutParams,
+    "level_breakout_inv": LevelBreakoutInvParams,
+    "g_bounce": GBounceParams,
+    "g_breakout": GBreakoutParams,
+    "g_breakout_false": GBreakoutFalseParams,
+    "g_range": GRangeParams,
     "exhaustion_reversal": ExhaustionParams,
     "impulse_flag": ImpulseFlagParams,
     "order_block": OrderBlockParams,

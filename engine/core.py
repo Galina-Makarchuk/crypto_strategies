@@ -54,6 +54,10 @@ class StrategyName(Enum):
     EMA_TOUCH = "ema_touch"
     SWING_BOUNCE = "swing_bounce"
     SWING_BREAKOUT = "swing_breakout"
+    G_BOUNCE = "g_bounce"                        # level bounce / rejection (engine.levels)
+    G_BREAKOUT = "g_breakout"                    # squeeze (compression) breakout
+    G_BREAKOUT_FALSE = "g_breakout_false"        # false-breakout reversal
+    G_RANGE = "g_range"                          # range / channel fade
 
 
 class RunMode(Enum):

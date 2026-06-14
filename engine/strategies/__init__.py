@@ -14,6 +14,10 @@ from .fractal_breakout import FractalBreakoutStrategy
 from .fractal_breakout_inv import InverseFractalBreakoutStrategy
 from .level_breakout import LevelBreakoutStrategy
 from .level_breakout_inv import InverseLevelBreakoutStrategy
+from .g_bounce import GBounceStrategy
+from .g_breakout import GBreakoutStrategy
+from .g_breakout_false import GBreakoutFalseStrategy
+from .g_range import GRangeStrategy
 from .swing_bounce import SwingBounceStrategy
 from .swing_breakout import SwingBreakoutStrategy
 from .swing_flip import SwingFlipStrategy
@@ -38,6 +42,10 @@ __all__ = [
     "InverseFractalBreakoutStrategy",
     "LevelBreakoutStrategy",
     "InverseLevelBreakoutStrategy",
+    "GBounceStrategy",
+    "GBreakoutStrategy",
+    "GBreakoutFalseStrategy",
+    "GRangeStrategy",
     "SwingBounceStrategy",
     "SwingBreakoutStrategy",
     "SwingFlipStrategy",

@@ -38,6 +38,7 @@ from engine.strategy_configurator import (
     EmaTouchParams,
     ImpulseFlagParams,
     LevelParams,
+    LevelBreakoutParams,
     OrderBlockParams,
     SupertrendParams,
     SwingMlParams,
@@ -121,7 +122,7 @@ class TestParamsValidation:
         lambda: EmaTouchParams(ema_touch_period_long=None),  # optional, None disables
         lambda: EmaTouchParams(ema_touch_regime_filter=200), # optional, positive int
         lambda: SwingParams(swing_bounce_min_bars_between_trades=0),  # zero cooldown
-        lambda: LevelParams(level_breakout_buffer_atr=0.0),  # non-negative buffer
+        lambda: LevelBreakoutParams(level_breakout_buffer_atr=0.0),  # non-negative buffer
         lambda: ImpulseFlagParams(flag_close_pos_min=1.0),   # ratio boundary
         # Free-range magnitudes: small/large both pass, NO cross-field ordering
         # or upper cap, so sweeps roam freely.

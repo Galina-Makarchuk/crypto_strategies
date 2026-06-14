@@ -43,12 +43,13 @@ through a registry" plus porting two outside detectors into the causal framework
 |-----|--------|-----------|--------------|
 | pivot_level (default) | ours, engine/level_detector.py | pivot-seeded; a level lives until invalidated by a touch within tolerance or by being bracketed N candles; three families (resistance / support / pullback) | yes |
 | cluster_level | key_levels.py (KeyLevelDetector) | merges nearby pivots into one mean-price level; the level strengthens on touch and dies only on a decisive close-through break; carries a strength score | yes (streaming) |
-| touch_level | the Bybit pair (levels_entries_exits ≡ gerchik, byte-identical) | significance by number of historical touches; median-clustered; optional recency drop | no — needs a causal port |
+| touch_level | the Bybit pair (the external source project, byte-identical) | significance by number of historical touches; median-clustered; optional recency drop | no — needs a causal port |
 
 The names are deliberately parallel (X_level) and describe each detector's
 defining trait, so they read clearly as a config value and as a notebook section
-title. The folder name gerchik is intentionally not reused for ours, since that
-folder holds the Bybit copy and would be the most confusing possible label.
+title. The external source project's folder name is intentionally not reused for
+ours, since that folder holds the Bybit copy and would be the most confusing
+possible label.
 
 ## Architecture: the seam
 
