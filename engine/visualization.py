@@ -145,9 +145,16 @@ def build_chart(
     pass an explicit ``save_path``.
 
     Args:
+        df: OHLCV candles to plot (timestamp index, open/high/low/close[/volume]).
+        signals: Entry/exit markers to overlay; None draws candles only.
+        title: Figure title.
+        save_path: If given, also write the chart as a standalone HTML file (parent
+                   dirs created as needed); None writes nothing.
+        show_volume: Add a volume sub-panel below the price panel.
         auto_refresh: If > 0 (and save_path is given), injects a meta-refresh tag
                       so the browser reloads the page every N seconds. Set to your
                       poll interval (e.g. 30) for live mode.
+        trades: Closed trades to annotate (entry/exit connectors); None skips them.
 
     Returns the Plotly ``Figure``.
     """

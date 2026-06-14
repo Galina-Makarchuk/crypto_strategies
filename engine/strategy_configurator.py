@@ -197,8 +197,9 @@ class FractalParams:
     merge_tolerance: float = 0.0015  # 0.15 %
 
     EXITS: ClassVar[dict[str, str]] = {
-        # DEFAULT preserves the byte-for-byte behaviour of the pre-rename
-        # level_breakout, which used this chandelier trail.
+        # DEFAULT preserves the byte-for-byte behaviour of the old fractal-based
+        # level_breakout (now renamed fractal_breakout), which used this chandelier
+        # trail. The current level_breakout uses structural_rr2 instead.
         "fractal_breakout": DEFAULT,
         "fractal_breakout_inv": DEFAULT,
     }
@@ -239,9 +240,12 @@ class LevelParams:
       touch_level   — significance by historical touch count; reads the touch_*
                       knobs.
 
-    All three read the shared level_* knobs (pivot window, ATR period, tolerance);
-    the cluster_*/touch_* knobs are read only by their own detector and are inert
-    (validated but unused) under the others. Distinct from the fractal_breakout
+    Each detector reads its own subset: pivot_level reads level_delta /
+    level_delta_mode / level_invalidation_candles (plus the per-family overrides);
+    cluster_level reads the cluster_* knobs; touch_level reads level_delta_mode +
+    the touch_* knobs. Only level_pivot_window and level_atr_period are truly
+    shared. A knob a detector does not read is inert (validated but unused) under
+    it. Distinct from the fractal_breakout
     detector. Carries its OWN atr period (level_atr_period). Concrete strategies
     (LevelBreakoutParams, GBounceParams, …) inherit this and add their signal
     knobs + EXITS + their preferred detector default.

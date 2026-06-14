@@ -72,6 +72,7 @@ class LiveEngine:
         self._store = LiveRecords(db_path)
         self._state: PositionState = self._store.load_state()
         self._seed_state_policy(self._state)
+        self._register_shutdown_handlers()
         # Paper-equity layer: a continuous, restart-safe simulated equity curve
         # (the live engine places no real orders — this forward-tests the same
         # sizing the backtester uses). Seeded from initial_equity on first run.
@@ -106,7 +107,8 @@ class LiveEngine:
         state.allow_short = tc.allows_short()
         state.max_daily_loss_bps = tc.max_daily_loss_bps
 
-        # Register signal handlers for graceful shutdown
+    def _register_shutdown_handlers(self) -> None:
+        """Register SIGINT / SIGTERM handlers for graceful shutdown."""
         signal.signal(signal.SIGINT, self._handle_shutdown)
         signal.signal(signal.SIGTERM, self._handle_shutdown)
 
@@ -228,7 +230,7 @@ class LiveEngine:
             logger.warning("No closed candles this tick (only a forming bar) — skipping.")
             return
 
-        prev_open = self._state.current_trade if self._state else None
+        prev_open = self._state.current_trade
         prepared = self.strategy.prepare(df)
         state = self._replay(prepared)
         self._state = state

@@ -15,7 +15,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .core import Direction, ExitReason, PositionState, PositionStatus, Trade
+from .core import Direction, PositionState, PositionStatus, Trade
 
 logger = logging.getLogger(__name__)
 
@@ -201,35 +201,3 @@ class LiveRecords:
         trade into the equity curve exactly once, even across restarts."""
         rows = self._conn.execute("SELECT trade_id FROM trade_history").fetchall()
         return {r[0] for r in rows}
-
-    # ── Load trade history ─────────────────────────────────────────────────────
-    # A method to read past trades from SQLite.
-    # Right now nothing in the project uses this method.
-    # Can be wired later into reporting, if needed.
-    def load_trade_history(self, limit: int = 200) -> list[Trade]:
-        rows = self._conn.execute(
-            "SELECT trade_id, direction, entry_ts, entry_price, exit_ts, exit_price, pnl_bps, peak_price, "
-            "exit_reason, notional, pnl_currency, equity_after "
-            "FROM trade_history ORDER BY created_at DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
-
-        trades = []
-        for r in rows:
-            trades.append(
-                Trade(
-                    trade_id=r[0],
-                    direction=Direction(r[1]),
-                    entry_ts=datetime.fromisoformat(r[2]) if r[2] else None,
-                    entry_price=r[3],
-                    exit_ts=datetime.fromisoformat(r[4]) if r[4] else None,
-                    exit_price=r[5] or 0.0,
-                    pnl_bps=r[6] or 0.0,
-                    peak_price=r[7] or 0.0,
-                    exit_reason=ExitReason(r[8]) if r[8] else None,
-                    notional=r[9] or 0.0,
-                    pnl_currency=r[10] or 0.0,
-                    equity_after=r[11] or 0.0,
-                )
-            )
-        return trades

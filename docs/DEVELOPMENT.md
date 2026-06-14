@@ -48,13 +48,17 @@ engine/
 ├── live_records.py              # SQLite-backed live records: open position + trade history
 ├── live.py                      # Live trading loop with circuit breaker + SIGTERM
 ├── cli.py                       # Argument parsing + strategy dispatch
-├── strategies/                  # 20 strategies, each a BaseStrategy (prepare + on_bar)
+├── strategies/                  # 24 strategies, each a BaseStrategy (prepare + on_bar)
 │   ├── base.py                  # Abstract base: prepare() + on_bar() + exit-policy injection
 │   ├── fractal_breakout.py      # N-bar fractal-pivot S/R breakout (indicators.detect_swing_*)
 │   ├── fractal_breakout_inv.py  # Inverse: fade the fractal breakout
 │   ├── level_base.py            # Shared base for the level_* family (engine.levels, detector selectable)
 │   ├── level_breakout.py        # Breakout of horizontal S/R from engine.levels
 │   ├── level_breakout_inv.py    # Inverse: fade the level breakout
+│   ├── g_bounce.py              # Level bounce / rejection (engine.levels)
+│   ├── g_breakout.py            # Squeeze (compression) breakout
+│   ├── g_breakout_false.py      # False-breakout reversal
+│   ├── g_range.py               # Range / channel fade
 │   ├── ema_cross.py             # EMA crossover + RSI filter
 │   ├── ema_cross_inv.py         # Inverse EMA crossover
 │   ├── ema_cross_adaptive.py    # Adaptive EMA crossover — RSI follow/fade regime switch
@@ -133,15 +137,36 @@ pytest engine/tests/test_core.py -v
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--strategy` | `supertrend` | `level_breakout`, `level_breakout_inv`, `fractal_breakout`, `fractal_breakout_inv`, `ema`, `ema_inv`, `ema_adaptive`, `ema_touch`, `supertrend`, `supertrend_inv`, `supertrend_adaptive`, `exhaustion_reversal`, `impulse_flag`, `order_block`, `order_block_inv`, `vwap_bands`, `swing_flip`, `swing_ml`, `swing_bounce`, `swing_breakout` |
+| `--strategy` | `supertrend` | One of the 24 `StrategyName` values: `level_breakout`(+`_inv`), `fractal_breakout`(+`_inv`), `ema`/`ema_inv`/`ema_adaptive`, `ema_touch`, `supertrend`(+`_inv`/`_adaptive`), `exhaustion_reversal`, `impulse_flag`, `order_block`(+`_inv`), `vwap_bands`, `swing_flip`/`swing_bounce`/`swing_breakout`/`swing_ml`, `g_bounce`, `g_breakout`, `g_breakout_false`, `g_range` |
 | `--mode` | `historical` | `historical`, `live` |
-| `--symbol` | `BTCUSDT` | Any Bybit linear perp |
-| `--interval` | `15` | `1,3,5,15,30,60,120,240,360,720,D,W,M` |
-| `--candles` | `800` | Number of historical candles |
+| `--provider` | inherit `ACTIVE` | `bybit` (crypto) or `yahoo` (indices/commodities/futures) |
+| `--symbol` | inherit `ACTIVE` | Trading pair / ticker |
+| `--interval` | inherit `ACTIVE` | `1,3,5,15,30,60,120,240,360,720,D,W,M` |
+| `--candles` | inherit `ACTIVE` | Number of historical candles (ignored when `--start` is set) |
+| `--category` | inherit `ACTIVE` | Bybit product type: `linear`, `inverse` (ignored by non-Bybit providers) |
+| `--start` | inherit `ACTIVE` | Range-mode start, ISO e.g. `2026-03-20` (`--candles` ignored) |
+| `--end` | inherit `ACTIVE` | Range-mode end, ISO (defaults to now) |
 | `--save` | `None` | Output chart path; default is repo-root anchored — `data/results/<dataset>/<strategy>.html` (historical) or `data/live/<symbol>_<interval>_<strategy>.html` (live) |
 | `--poll` | `30` | Live poll interval (seconds) |
 | `--db` | `None` | SQLite path for live state; default `data/live/<strategy>.db` |
+| `--notify` | `None` | Live-mode signal alerts: comma-separated `browser,desktop,telegram` |
 | `--log-level` | `INFO` | `DEBUG,INFO,WARNING,ERROR` |
 | `--log-json` | off | Structured JSON logging |
+
+Trade-level parameters (the `TradingConfig` group — an omitted flag inherits the `ACTIVE_TRADE` block in `trade_configurator.py`):
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--initial-equity` | inherit `ACTIVE_TRADE` | Starting account equity in quote ccy |
+| `--position-size-bps` | inherit `ACTIVE_TRADE` | Notional per trade as bps of equity (10000 = 100%) |
+| `--leverage` | inherit `ACTIVE_TRADE` | Leverage multiplier on notional |
+| `--fee-bps` | inherit `ACTIVE_TRADE` | Taker fee per side in bps (Bybit 0.04% = 4) |
+| `--slippage-bps` | inherit `ACTIVE_TRADE` | Estimated slippage per side in bps |
+| `--max-daily-loss-bps` | inherit `ACTIVE_TRADE` | Halt entries after this realized loss (bps) in a UTC day |
+| `--max-holding-bars` | inherit `ACTIVE_TRADE` | Force-close a trade after this many bars |
+| `--direction` | inherit `ACTIVE_TRADE` | Allowed trade sides: `long`, `short`, `both` |
+| `--sizing-mode` | inherit `ACTIVE_TRADE` | `fixed` = position_size_bps; `risk` = risk_per_trade_bps (stop-where-available) |
+| `--risk-per-trade-bps` | inherit `ACTIVE_TRADE` | Equity risked per trade in risk mode, bps (100 = 1%) |
+| `--exit-preset` | strategy's preset | Override the strategy's exit policy with a named `EXIT_PRESETS` key |
 
 License MIT (C) Galina Makarchuk

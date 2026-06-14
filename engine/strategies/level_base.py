@@ -1,7 +1,8 @@
 """Shared plumbing for the level-detector strategy family.
 
-The ``level_*`` strategies (``level_breakout`` today; ``level_bounce`` /
-``level_retest`` planned) all trade the **horizontal S/R levels** produced by the
+The level strategies (``level_breakout``/``level_breakout_inv`` plus the ``g_*``
+family — ``g_bounce`` / ``g_breakout`` / ``g_breakout_false`` / ``g_range``) all
+trade the **horizontal S/R levels** produced by the
 dedicated :mod:`engine.levels` package. The detector is selectable per run via
 ``LevelParams.level_detector`` (``pivot_level`` / ``cluster_level`` /
 ``touch_level``); :func:`engine.levels.detect_levels` dispatches on it and every
@@ -27,10 +28,11 @@ How it works:
 The level_base uses the levels detected by engine.levels - their exact prices, unmodified.
 Entries are triggered on the detected levels against those prices.
 The stop is anchored on the detected level too.
-The only added quantity is level_breakout_buffer_atr, which defaults to 0.0 —
-so by default the cross is measured exactly at the detected level,
-with the ATR buffer available only to demand a more decisive break.
-On top of this, the base filters + selects, but does not alter the levels.
+Each concrete strategy adds its own signal knobs on top: level_breakout(_inv) add
+level_breakout_buffer_atr (default 0.0, so by default the cross is measured exactly
+at the detected level, with the ATR buffer available only to demand a more decisive
+break), while the g_* strategies carry their own buffer/tolerance knobs. The base
+itself only filters + selects, and never alters a level's price.
 
 Three things happen, none of which change a level's price:
 1. Family selection:

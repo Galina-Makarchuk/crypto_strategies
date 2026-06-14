@@ -38,7 +38,7 @@ import pandas as pd
 
 from ..indicators import atr as calc_atr
 from ..indicators import ema as calc_ema
-from ..core import Direction, ExitReason, PositionState
+from ..core import Direction, PositionState
 from ..strategy_configurator import ImpulseFlagParams
 from .base import BaseStrategy
 

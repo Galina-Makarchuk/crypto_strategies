@@ -105,9 +105,10 @@ def exit_duration_columns(trades: list[Trade]) -> dict:
     """Per-config exit-reason mix + average hold time, for the sweep grid.
 
     Returns ``n_<reason>`` (one column per :class:`ExitReason`, zero-filled) plus
-    ``avg_duration_min``. Ported from the ema_values sweep so Grid search shows
+    ``avg_duration_min``. Ported from the ema_values sweep so :func:`sweep` shows
     *how* trades close (SL / TP / trailing / signal-flip / time-stop) and how long
-    they're held — not just aggregate P&L. Kept out of :func:`metrics_from_trades`
+    they're held — not just aggregate P&L. ``grid_search`` does not include these
+    columns. Kept out of :func:`metrics_from_trades`
     so the walk-forward / Monte-Carlo paths stay on the lean core-metric set.
     """
     counts = Counter(t.exit_reason.value for t in trades if t.exit_reason is not None)
@@ -318,6 +319,9 @@ def grid_search(
                     res = Backtester(_instantiate(strategy_cls, scfg, exit_pol),
                                      symbol=spec.symbol, trading_config=tcfg).run(
                         df, interval=spec.interval)
+                    # Intentionally a lean BResult column set (no exit-reason /
+                    # hold-time columns like sweep's exit_duration_columns): the 4D
+                    # config cross can be large, so this keeps the grid skimmable.
                     rows.append({
                         **d_params, **s_params, **t_params,
                         **({"exit": exit_label} if exit_grid is not None else {}),

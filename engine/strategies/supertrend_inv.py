@@ -61,7 +61,10 @@ class InverseSuperTrendStrategy(BaseStrategy):
         # ── Exit logic ─────────────────────────────────────────────────────
         if state.current_trade is not None:
             trade = state.current_trade
-            # Signal-flip exit stays in-strategy, checked first (as before).
+            # Signal-flip exit stays in-strategy, checked first. Because entries
+            # are inverted (down-flip -> LONG, up-flip -> SHORT), a LONG closes on
+            # the next up-flip and a SHORT on the next down-flip — the opposite
+            # side from base supertrend.
             if (trade.direction == Direction.LONG and flip_up) or (
                 trade.direction == Direction.SHORT and flip_down
             ):

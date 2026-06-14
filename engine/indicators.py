@@ -211,7 +211,6 @@ def adx(df: pd.DataFrame, period: int = 14) -> pd.Series:
         tr[i] = max(high[i] - low[i], abs(high[i] - close[i - 1]), abs(low[i] - close[i - 1]))
 
     # Wilder smoothing (EMA with alpha = 1/period)
-    alpha = 1.0 / period
     smoothed_tr = np.zeros(n)
     smoothed_plus = np.zeros(n)
     smoothed_minus = np.zeros(n)

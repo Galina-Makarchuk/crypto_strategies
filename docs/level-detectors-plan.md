@@ -41,7 +41,7 @@ through a registry" plus porting two outside detectors into the causal framework
 
 | Key | Source | Mechanism | Causal today |
 |-----|--------|-----------|--------------|
-| pivot_level (default) | ours, engine/level_detector.py | pivot-seeded; a level lives until invalidated by a touch within tolerance or by being bracketed N candles; three families (resistance / support / pullback) | yes |
+| pivot_level (default) | ours, engine/level_detector.py (now engine/levels/pivot_level.py) | pivot-seeded; a level lives until invalidated by a touch within tolerance or by being bracketed N candles; three families (resistance / support / pullback) | yes |
 | cluster_level | key_levels.py (KeyLevelDetector) | merges nearby pivots into one mean-price level; the level strengthens on touch and dies only on a decisive close-through break; carries a strength score | yes (streaming) |
 | touch_level | the Bybit pair (the external source project, byte-identical) | significance by number of historical touches; median-clustered; optional recency drop | no — needs a causal port |
 

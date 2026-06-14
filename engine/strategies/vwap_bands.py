@@ -17,7 +17,6 @@ import pandas as pd
 
 from ..indicators import vwap_stdev_bands as calc_vwap_bands
 from ..core import Direction, PositionState
-from ..strategy_configurator import VwapParams
 from .base import BaseStrategy
 
 

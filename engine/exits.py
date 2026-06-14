@@ -10,7 +10,7 @@ sets ``self.exit_policy``). This module depends only on ``core``
 (Direction/ExitReason) — never on strategies — so it sits cleanly below them
 in the import graph.
 
-Two fill conventions, chosen to mirror the strategies they'll replace:
+Two fill conventions, chosen to mirror the strategies they serve:
   * **Trailing stop** (chandelier) triggers on the *close* and fills at the close.
   * **Fixed stop / target** triggers *intrabar* (bar low/high pierces the level)
     and fills at the level.

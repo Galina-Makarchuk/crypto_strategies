@@ -115,10 +115,6 @@ class _StreakTracker:
         return self._dir
 
     @property
-    def in_progress_start(self) -> int:
-        return self._start
-
-    @property
     def in_progress_volume(self) -> float:
         return self._vol
 

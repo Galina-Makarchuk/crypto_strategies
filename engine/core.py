@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from enum import Enum, auto
 from typing import Optional
 
@@ -58,11 +58,6 @@ class StrategyName(Enum):
     G_BREAKOUT = "g_breakout"                    # squeeze (compression) breakout
     G_BREAKOUT_FALSE = "g_breakout_false"        # false-breakout reversal
     G_RANGE = "g_range"                          # range / channel fade
-
-
-class RunMode(Enum):
-    HISTORICAL = "historical"
-    LIVE = "live"
 
 
 class ExitReason(Enum):
@@ -125,7 +120,8 @@ class Signal:
 
 @dataclass
 class Trade:
-    """A completed round-trip trade with P&L."""
+    """A trade record spanning entry to exit. Exit fields and ``pnl_bps`` are
+    filled at exit; until then ``is_closed`` is False and ``duration`` is None."""
 
     trade_id: str = field(default_factory=lambda: uuid.uuid4().hex[:8])
     direction: Direction = Direction.LONG
@@ -141,8 +137,9 @@ class Trade:
     # RISK-mode position sizing). None for trailing/flip-exit strategies.
     stop_price: Optional[float] = None
 
-    # Equity layer (additive; filled by the backtester's post-run sizing pass —
-    # PositionState itself stays equity-agnostic). pnl_bps above is unaffected.
+    # Equity layer (additive; filled by the backtester's post-run sizing pass, or
+    # by the live engine as trades close — PositionState itself stays
+    # equity-agnostic). pnl_bps above is unaffected.
     notional: float = 0.0       # position size in quote ccy at entry
     pnl_currency: float = 0.0   # notional * pnl_bps / 10_000
     equity_after: float = 0.0   # running account equity after this trade closed
