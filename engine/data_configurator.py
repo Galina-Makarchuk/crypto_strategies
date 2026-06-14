@@ -15,19 +15,24 @@ explicit spec for a one-off::
     from engine.data_configurator import load_data, DataSpec
     df = load_data(DataSpec(symbol="ETHUSDT", interval="60", category="inverse"))
 
-Cache layout (git-ignored, lives under data/)::
+The data source is selectable via DataSpec.provider (default "bybit" for crypto;
+"yahoo" for indices / commodities / futures). load_data dispatches through the
+provider registry (engine.providers); everything downstream is provider-blind.
 
-    data/ohlcv/<category>/<symbol>_<interval>_<window>.parquet   # the candles
-    data/ohlcv/<category>/<symbol>_<interval>_<window>.json      # provenance sidecar, records the spec + fetched range + fetch time
+Cache layout (git-ignored, lives under data/). bybit keeps its original
+per-category layout; other providers are namespaced by provider::
 
+    data/ohlcv/<category>/<symbol>_<interval>_<window>.parquet            # bybit
+    data/ohlcv/<provider>/<category-or-_>/<symbol>_<interval>_<window>.parquet  # others
+    (each parquet has a sibling .json provenance sidecar: spec + fetched range + fetch time)
 
-Cache path is anchored at the repo root (Path(__file__).parents[1]), 
+Cache path is anchored at the repo root (Path(__file__).parents[1]),
 so it works regardless of which directory a notebook runs from.
 
 A cache hit is reused unless refresh=True.
 
-The returned frame matches BybitFetcher's contract exactly: a timezone-aware
-(UTC) DatetimeIndex named ``timestamp`` with float columns
+The returned frame matches the provider contract exactly (see engine.providers):
+a timezone-aware (UTC) DatetimeIndex named ``timestamp`` with float columns
 ``open, high, low, close, volume, turnover``.
 """
 
@@ -43,8 +48,7 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
-from .fetcher import BybitFetcher
-from .core import validate_category, validate_interval
+from .providers import DataProvider, make_provider, resolve_category, validate_spec
 
 if TYPE_CHECKING:  # avoid importing the heavy backtester module at runtime
     from .backtester import BacktestResult
@@ -68,11 +72,12 @@ class DataSpec:
     """
 
     symbol: str = "BTCUSDT"
-    interval: str = "15"            # any VALID_INTERVALS member
-    category: str = "linear"        # "linear" | "inverse"
+    interval: str = "15"            # a canonical interval the provider supports
+    category: str | None = "linear" # provider product type; ignored by providers without one (e.g. yahoo)
     num_candles: int = 800          # count mode only (when start is None)
     start: str | None = None        # ISO date/time, e.g. "2026-03-20"
     end: str | None = None          # ISO date/time; None → now
+    provider: str = "bybit"         # data source; one of engine.providers.PROVIDERS ("bybit" | "yahoo")
 
     @property
     def is_range(self) -> bool:
@@ -85,9 +90,10 @@ class DataSpec:
 # ║  save, and re-run any notebook/script — they all call load_data().         ║
 # ╚══════════════════════════════════════════════════════════════════════════╝
 ACTIVE = DataSpec(
+    provider    = "bybit",       # data source: "bybit" (crypto) | "yahoo" (indices/commodities/futures)
     symbol      = "BTCUSDT",
     interval    = "15",          # 1 3 5 15 30 60 120 240 360 720 D W M
-    category    = "linear",      # "linear" | "inverse"
+    category    = "linear",      # "linear" | "inverse" (bybit); ignored by yahoo
     num_candles = 800,           # used only when start is None
     start       = None,          # e.g. "2026-03-20"  → range mode (num_candles ignored)
     end         = None,          # e.g. "2026-04-19"  → defaults to now
@@ -116,7 +122,7 @@ def load_data(
     *,
     refresh: bool = False,
     cache_dir: Path | str | None = None,
-    fetcher: BybitFetcher | None = None,
+    fetcher: DataProvider | None = None,
 ) -> pd.DataFrame:
     """Return OHLCV candles for ``spec``, reading the on-disk cache when possible.
 
@@ -169,9 +175,15 @@ def dataset_signature(spec: DataSpec = ACTIVE) -> str:
     """Stable identifier for the dataset described by ``spec``.
 
     Used to group saved results so every strategy analysed on the same data
-    lands under one folder, e.g. ``linear_BTCUSDT_15_last800``.
+    lands under one folder, e.g. ``linear_BTCUSDT_15_last800`` (bybit) or
+    ``yahoo_na_GC-F_D_last800`` (another provider).
     """
-    return f"{spec.category}_{spec.symbol}_{spec.interval}_{_window_tag(spec)}"
+    cat = _resolved_category(spec)
+    # Back-compat: bybit keeps its original signature; other providers are
+    # prefixed so results never co-mingle across exchanges.
+    if spec.provider == "bybit":
+        return f"{cat}_{spec.symbol}_{spec.interval}_{_window_tag(spec)}"
+    return f"{spec.provider}_{cat or 'na'}_{spec.symbol}_{spec.interval}_{_window_tag(spec)}"
 
 
 def save_result(
@@ -280,10 +292,16 @@ def _trade_record(t) -> dict:
 
 
 def _validate(spec: DataSpec) -> None:
-    validate_interval(spec.interval)
-    validate_category(spec.category)
+    # Provider-aware: each provider declares its supported intervals/categories.
+    validate_spec(spec.provider, spec.interval, spec.category)
     if not spec.is_range and spec.num_candles <= 0:
         raise ValueError("num_candles must be positive in count mode.")
+
+
+def _resolved_category(spec: DataSpec) -> str | None:
+    """The category actually used (None for providers without a product taxonomy,
+    e.g. yahoo; "linear"/"inverse" for bybit)."""
+    return resolve_category(spec.provider, spec.category)
 
 
 def _slug(text: str) -> str:
@@ -299,7 +317,13 @@ def _window_tag(spec: DataSpec) -> str:
 
 def _cache_path(base: Path, spec: DataSpec) -> Path:
     name = f"{spec.symbol}_{spec.interval}_{_window_tag(spec)}.parquet"
-    return base / spec.category / name
+    cat = _resolved_category(spec)
+    # Back-compat: bybit keeps the original data/ohlcv/<category>/ layout so warm
+    # caches are preserved. Other providers are namespaced by provider to avoid
+    # collisions (data/ohlcv/<provider>/<category-or-_>/...).
+    if spec.provider == "bybit":
+        return base / (cat or "_") / name
+    return base / spec.provider / (cat or "_") / name
 
 
 def _read_cache(data_path: Path) -> pd.DataFrame | None:
@@ -323,14 +347,14 @@ def _write_parquet_atomic(df: pd.DataFrame, data_path: Path) -> None:
     tmp.replace(data_path)
 
 
-def _fetch(spec: DataSpec, fetcher: BybitFetcher | None) -> pd.DataFrame:
+def _fetch(spec: DataSpec, fetcher: DataProvider | None) -> pd.DataFrame:
     own = fetcher is None
-    fetcher = fetcher or BybitFetcher()
+    fetcher = fetcher or make_provider(spec.provider)
     try:
         return fetcher.fetch_klines(
             symbol=spec.symbol,
             interval=spec.interval,
-            category=spec.category,
+            category=_resolved_category(spec),
             num_candles=spec.num_candles,
             start_time=spec.start,
             end_time=spec.end,

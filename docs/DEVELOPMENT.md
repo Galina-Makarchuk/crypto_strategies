@@ -37,7 +37,11 @@ engine/
 ├── strategy_configurator.py     # Per-family *Params (signal knobs) + PARAMS registry + exit-policy catalog (EXIT_PRESETS)
 ├── trade_configurator.py        # TradingConfig: costs, sizing, leverage, direction gate, risk overlays
 ├── data_configurator.py         # Single source of truth for market data: load_data() + parquet cache
-├── fetcher.py                   # Bybit v5 kline client with retry + rate limiting
+├── fetcher.py                   # BybitFetcher — the reference data provider (Bybit v5 klines, retry + rate limit)
+├── providers/                   # Pluggable data-provider seam — pick via DataSpec.provider
+│   │                            #   (__init__: PROVIDERS registry + make_provider + per-provider validation)
+│   ├── base.py                  #   DataProvider contract + finalize_ohlcv (canonical UTC OHLCV)
+│   └── yahoo.py                 #   YahooProvider (yfinance) — indices/commodities/futures
 ├── backtester.py                # Event-driven bar-by-bar backtester + additive equity layer
 ├── evaluation.py                # Robustness toolkit: metrics, sweep, grid_search, walk_forward, monte_carlo
 ├── visualization.py             # Plotly chart builder + level overlay (plot_levels)
@@ -68,7 +72,7 @@ engine/
 │   ├── swing_breakout.py        # ATR-prominence ZigZag — breakout mode (ported)
 │   └── swing_ml.py              # ML swing-pivot classifier (imitation learning)
 ├── ml/                          # ML pipeline for swing_ml: features, labels, splits, order_flow
-└── tests/                       # pytest: test_core, test_golden, test_level_detector, test_levels, test_live, test_ml, …
+└── tests/                       # pytest: test_core, test_golden, test_level_detector, test_levels, test_providers, test_live, test_ml, …
 ```
 
 ## Key Design Decisions

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Crypto trading strategy framework for Bybit linear & inverse perpetuals. Runs historical backtests or a live poll loop from a single CLI. Python package in [engine/](engine/); exploratory notebooks in [strategy_notebooks/](strategy_notebooks/).
+Crypto trading strategy framework, primarily for Bybit linear & inverse perpetuals, with a **pluggable data-provider seam** so the same strategies/backtester also run on non-crypto markets (indices, commodities, currency futures) via Yahoo Finance — see "Providers" below. Runs historical backtests or a live poll loop from a single CLI. Python package in [engine/](engine/); exploratory notebooks in [strategy_notebooks/](strategy_notebooks/).
 
 ## Common commands
 
@@ -17,6 +17,9 @@ python -m engine --strategy supertrend --interval 15 --candles 800
 
 # Explicit date range, on the inverse market
 python -m engine --strategy supertrend --interval 15 --start 2026-01-01 --end 2026-04-01 --category inverse
+
+# Non-crypto via the Yahoo provider (daily gold futures); --category is ignored for yahoo
+python -m engine --strategy supertrend --provider yahoo --symbol GC=F --interval D --candles 500
 
 # Trade-level params (costs / sizing / direction / overlays) — see trade_configurator.py
 python -m engine --strategy supertrend --interval 15 \
@@ -79,13 +82,13 @@ Each strategy is **assigned** a policy in [strategy_configurator.py](engine/stra
 
 [LiveEngine](engine/live.py#L56) re-fetches a window of candles each tick, runs `prepare()` fresh, and calls `on_bar` on the last bar. Position state is persisted to SQLite via [LiveRecords](engine/live_records.py#L65) (WAL mode) so a restart recovers open positions. A circuit breaker halts the loop after 10 consecutive fetch failures; SIGTERM/SIGINT trigger graceful shutdown. Signals are kept to a rolling window of 500.
 
-### Fetcher contract
+### Providers (pluggable data sources)
 
-[BybitFetcher.fetch_klines()](engine/fetcher.py#L119) always returns a **timezone-aware UTC** DataFrame indexed by timestamp with columns `open, high, low, close, volume, turnover`. Naive timestamps are bugs — every downstream component assumes UTC. It accepts a `category` argument (`linear` | `inverse`, default `linear`) — the only place the Bybit product type enters the request.
+Market data comes through a **provider seam** ([engine/providers/](engine/providers/)): a `DataProvider` ([base.py](engine/providers/base.py)) is any source that returns the one canonical contract — a **timezone-aware UTC** DataFrame indexed by `timestamp` with float columns `open, high, low, close, volume, turnover`. Naive timestamps are bugs; everything downstream of `load_data()` is provider-blind. Two providers are registered in [providers/__init__.py](engine/providers/__init__.py): `bybit` ([BybitFetcher](engine/fetcher.py), the reference — crypto linear/inverse perps) and `yahoo` ([YahooProvider](engine/providers/yahoo.py) via `yfinance` — indices / commodities / currency futures, e.g. `GC=F`, `CL=F`, `ES=F`, `6E=F`; keyless; `turnover` synthesized as `close*volume`). Pick one with `DataSpec.provider` (default `bybit`). Validation is **per-provider** (`validate_spec` / `resolve_category`): each provider declares its supported intervals and product categories — `category` (`linear`/`inverse`) is Bybit-only and ignored by providers without a product taxonomy. Adding a provider = implement the contract + register it; nothing downstream changes. `swing_ml*` order-flow (Tier-3) stays Bybit-only.
 
 ### Data is configured once, cached, and reused
 
-[engine/data_configurator.py](engine/data_configurator.py) is the single source of truth for market data. Edit the `ACTIVE` `DataSpec` block once — symbol, interval, `category` (`linear`/`inverse`), and either `num_candles` or `start`/`end` — and every notebook, script, and CLI run uses it. `load_data()` fetches via `BybitFetcher` and caches parquet under `data/ohlcv/<category>/…` with a JSON provenance sidecar (pinned `[start, end]` ranges are immutable; count/open-ended windows refetch after one bar interval; `refresh=True` forces). `save_result(result, spec)` persists each backtest to `data/results/<dataset_signature>/<strategy>.json` + `<strategy>_trades.csv`. **Go through `load_data()` — do not instantiate `BybitFetcher` directly** (the two `swing_ml*` notebooks are the deliberate exception: they fetch via `BybitFetcher` into their own pickle cache for a fixed multi-year training window). All of `data/` is git-ignored.
+[engine/data_configurator.py](engine/data_configurator.py) is the single source of truth for market data. Edit the `ACTIVE` `DataSpec` block once — `provider`, symbol, interval, `category`, and either `num_candles` or `start`/`end` — and every notebook, script, and CLI run uses it (the CLI mirrors it: `--provider`, `--symbol`, etc., each overriding one field). `load_data()` dispatches to the spec's provider and caches parquet (`bybit` keeps `data/ohlcv/<category>/…`; other providers are namespaced `data/ohlcv/<provider>/<category-or-_>/…`) with a JSON provenance sidecar (pinned `[start, end]` ranges are immutable; count/open-ended windows refetch after one bar interval; `refresh=True` forces). `save_result(result, spec)` persists each backtest to `data/results/<dataset_signature>/…` (bybit signatures unchanged; other providers prefixed). **Go through `load_data()` — do not instantiate a provider directly** (the two `swing_ml*` notebooks are the deliberate exception: they fetch via `BybitFetcher` into their own pickle cache for a fixed multi-year training window). All of `data/` is git-ignored.
 
 ## Adding a new strategy
 

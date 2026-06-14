@@ -20,6 +20,8 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from .core import VALID_CATEGORIES as _CORE_CATEGORIES
+from .core import VALID_INTERVALS as _CORE_INTERVALS
 from .core import validate_interval
 
 logger = logging.getLogger(__name__)
@@ -55,7 +57,19 @@ class RateLimiter:
 
 
 class BybitFetcher:
-    """Fetch OHLCV klines from Bybit v5 public API."""
+    """Fetch OHLCV klines from Bybit v5 public API.
+
+    The reference :data:`engine.providers.DataProvider`: it returns the canonical
+    UTC OHLCV contract every provider must honour. The class-level metadata below
+    (NAME / VALID_INTERVALS / VALID_CATEGORIES / DEFAULT_CATEGORY) lets the
+    provider registry validate a DataSpec for this provider without instantiating
+    it.
+    """
+
+    NAME = "bybit"
+    VALID_INTERVALS = _CORE_INTERVALS          # canonical interval codes Bybit accepts verbatim
+    VALID_CATEGORIES = _CORE_CATEGORIES        # {"linear", "inverse"} — Bybit product types
+    DEFAULT_CATEGORY = "linear"
 
     BASE_URL = "https://api.bybit.com"
     MAX_LIMIT = 1000

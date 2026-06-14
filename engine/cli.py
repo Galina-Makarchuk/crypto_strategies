@@ -22,6 +22,7 @@ from .backtester import Backtester
 from .data_configurator import ACTIVE, LIVE_DIR, DataSpec, load_data, save_result
 from .live import LiveEngine
 from .core import VALID_CATEGORIES, VALID_INTERVALS, StrategyName
+from .providers import PROVIDERS
 from .strategy_configurator import EXIT_PRESETS, params_for
 from .trade_configurator import ACTIVE_TRADE, SizingMode, TradeDirection, TradingConfig
 from .strategies import AdaptiveSuperTrendStrategy, AdaptiveEMACrossoverStrategy, EMACrossoverStrategy, InverseEMACrossoverStrategy, EmaTouchStrategy, ExhaustionReversalStrategy, ImpulseFlagStrategy, InverseOrderBlockStrategy, InverseSuperTrendStrategy, SwingMLStrategy, OrderBlockStrategy, SuperTrendStrategy, FractalBreakoutStrategy, InverseFractalBreakoutStrategy, LevelBreakoutStrategy, InverseLevelBreakoutStrategy, SwingBounceStrategy, SwingBreakoutStrategy, SwingFlipStrategy, VWAPBandsStrategy
@@ -112,10 +113,11 @@ def _build_data_spec(args) -> DataSpec:
     which candles they load. dataclasses.replace re-runs DataSpec validation."""
     overrides = {}
     for arg_name, field in (
+        ("provider", "provider"),
         ("symbol", "symbol"), ("interval", "interval"), ("category", "category"),
         ("candles", "num_candles"), ("start", "start"), ("end", "end"),
     ):
-        val = getattr(args, arg_name)
+        val = getattr(args, arg_name, _UNSET)
         if val is not _UNSET:
             overrides[field] = val
     return dataclasses.replace(ACTIVE, **overrides)
@@ -143,9 +145,16 @@ def main(argv: list[str] | None = None) -> int:
     # editing ACTIVE changes CLI runs too and ACTIVE stays the single source of
     # truth across notebooks AND the CLI. A passed flag overrides only its field.
     parser.add_argument(
+        "--provider",
+        default=_UNSET,
+        choices=sorted(PROVIDERS),
+        help="Data source (default: inherit ACTIVE.provider). bybit=crypto; "
+             "yahoo=indices/commodities/futures",
+    )
+    parser.add_argument(
         "--symbol",
         default=_UNSET,
-        help="Trading pair (default: inherit ACTIVE.symbol)",
+        help="Trading pair / ticker (default: inherit ACTIVE.symbol)",
     )
     parser.add_argument(
         "--interval",
@@ -349,6 +358,7 @@ def _run_live(strategy, trading_config, spec, args) -> int:
         symbol=spec.symbol,
         interval=spec.interval,
         category=spec.category,
+        provider=spec.provider,
         num_candles=spec.num_candles,
         poll_seconds=args.poll,
         chart_path=str(chart_path),

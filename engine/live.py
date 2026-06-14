@@ -19,8 +19,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-from .fetcher import BybitFetcher
-from .core import ExitReason, PositionState, Trade, validate_category, validate_interval
+from .core import ExitReason, PositionState, Trade
+from .providers import make_provider, resolve_category, validate_spec
 from .live_records import LiveRecords
 from .strategies.base import BaseStrategy
 from .trade_configurator import ACTIVE_TRADE, TradingConfig, warn_if_inverse_gated
@@ -51,19 +51,23 @@ class LiveEngine:
         strategy: BaseStrategy,
         symbol: str = "BTCUSDT",
         interval: str = "15",
-        category: str = "linear",
+        category: str | None = "linear",
+        provider: str = "bybit",
         num_candles: int = 500,
         poll_seconds: int = 30,
         chart_path: str = "live_chart.html",
         db_path: str = "trading_state.db",
         trading_config: TradingConfig | None = None,
     ):
-        validate_interval(interval)
-        validate_category(category)
+        validate_spec(provider, interval, category)
         self.strategy = strategy
         self.symbol = symbol
         self.interval = interval
         self.category = category
+        self.provider = provider
+        # The category actually sent to the provider — None for providers with no
+        # product taxonomy (e.g. yahoo); "linear"/"inverse" for bybit.
+        self._fetch_category = resolve_category(provider, category)
         self.num_candles = num_candles
         self.poll_seconds = poll_seconds
         self.chart_path = chart_path
@@ -72,7 +76,7 @@ class LiveEngine:
         # CLI and notebooks instead of silently diverging from them.
         self.trading_config = trading_config or ACTIVE_TRADE
 
-        self._fetcher = BybitFetcher()
+        self._fetcher = make_provider(provider)
         self._store = LiveRecords(db_path)
         self._state: PositionState = self._store.load_state()
         self._seed_state_policy(self._state)
@@ -105,6 +109,16 @@ class LiveEngine:
         logger.info("Received %s — shutting down gracefully …", sig_name)
         self._running = False
 
+    def _market_open(self) -> bool:
+        """Whether the venue is currently tradeable. A provider may expose an
+        is_market_open() hook (session/holiday calendar); absent one, assume
+        always-open — correct for 24/7 crypto, and a safe default elsewhere."""
+        hook = getattr(self._fetcher, "is_market_open", None)
+        try:
+            return bool(hook()) if callable(hook) else True
+        except Exception:  # noqa: BLE001 — a flaky hook must not stall the loop
+            return True
+
     def run(self) -> None:
         logger.info(
             "LIVE MODE started | %s %s %s | %s | poll=%ds",
@@ -118,6 +132,16 @@ class LiveEngine:
         self._announce_chart()
 
         while self._running:
+            if not self._market_open():
+                # Crypto is 24/7; non-crypto venues have sessions/holidays. When a
+                # provider reports closed, sleep instead of fetching, so off-hours
+                # empty fetches don't trip the circuit breaker.
+                logger.info(
+                    "Market closed for %s (%s) — sleeping %ds.",
+                    self.symbol, self.provider, self.poll_seconds,
+                )
+                time.sleep(self.poll_seconds)
+                continue
             try:
                 self._tick()
                 self._consecutive_failures = 0
@@ -180,7 +204,7 @@ class LiveEngine:
             symbol=self.symbol,
             interval=self.interval,
             num_candles=self.num_candles,
-            category=self.category,
+            category=self._fetch_category,
         )
 
         # Bybit returns the still-forming current candle as the most recent row.

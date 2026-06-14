@@ -4,6 +4,7 @@ pyarrow>=14  # parquet engine for engine/data_configurator.py cache
 plotly>=5.18,<6.0
 requests>=2.31,<3.0
 urllib3>=2.0,<3.0
+yfinance>=0.2,<1.0  # "yahoo" data provider (engine/providers/yahoo.py); lazy-imported
 pytest>=8.0,<9.1
 scikit-learn>=1.4,<2.0
 joblib>=1.3,<2.0
