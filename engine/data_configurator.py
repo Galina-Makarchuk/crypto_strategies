@@ -89,10 +89,25 @@ class DataSpec:
 # ║  The ONE place to configure the project-wide dataset. Change a value,      ║
 # ║  save, and re-run any notebook/script — they all call load_data().         ║
 # ╚══════════════════════════════════════════════════════════════════════════╝
+#
+# provider="yahoo" quick reference (set symbol to a Yahoo ticker, like BTCUSDT for bybit):
+#   Indices (cash):  ^GSPC S&P500 · ^NDX Nasdaq100 · ^DJI Dow · ^RUT Russell2000 · ^VIX
+#   Index futures:   ES=F S&P500 · NQ=F Nasdaq100 · YM=F Dow · RTY=F Russell
+#   Metals:          GC=F gold · SI=F silver · HG=F copper · PL=F platinum
+#   Energy:          CL=F WTI crude · BZ=F Brent · NG=F nat-gas · RB=F gasoline
+#   Grains:          ZC=F corn · ZW=F wheat · ZS=F soybeans
+#   Currency futs:   6E=F euro · 6J=F yen · 6B=F pound · 6A=F aussie · 6C=F cad · DX=F US-dollar-index
+#   (category is ignored for yahoo; interval supports 1 5 15 30 60 D W M — NOT 3 120 240 360 720)
+#
+# Yahoo history limits per timeframe (max lookback a single load can pull):
+#   interval 1   → ~7 days        interval 5 / 15 / 30 → ~60 days
+#   interval 60  → ~730 days (2y) interval D / W / M    → decades (years of history)
+#   Intraday is delayed / best-effort; yahoo is strongest for daily-EOD + recent intraday.
+#
 ACTIVE = DataSpec(
     provider    = "bybit",       # data source: "bybit" (crypto) | "yahoo" (indices/commodities/futures)
-    symbol      = "BTCUSDT",
-    interval    = "15",          # 1 3 5 15 30 60 120 240 360 720 D W M
+    symbol      = "BTCUSDT",     # bybit: BTCUSDT, ETHUSDT, …   yahoo: GC=F, CL=F, ES=F, 6E=F, ^GSPC, …
+    interval    = "15",          # bybit: 1 3 5 15 30 60 120 240 360 720 D W M   yahoo: 1 5 15 30 60 D W M
     category    = "linear",      # "linear" | "inverse" (bybit); ignored by yahoo
     num_candles = 800,           # used only when start is None
     start       = None,          # e.g. "2026-03-20"  → range mode (num_candles ignored)
