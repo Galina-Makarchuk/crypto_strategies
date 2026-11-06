@@ -68,3 +68,17 @@ Build a modular framework where:
 ## Future Work
 
 - Adaptive parameter selection -> done
+
+## Disclaimer
+
+This project is provided for **research and educational purposes only**. It is not investment advice, financial advice, trading advice, or a recommendation to buy, sell, or hold any asset. Nothing in this repository — including the code, notebooks, ratios, rankings, backtest results, or any output produced by running it — should be construed as a solicitation or recommendation to engage in any trading or investment strategy.
+
+Cryptocurrency and derivatives trading carry a high level of risk and may not be suitable for all investors. You can lose some or all of your capital. Past performance, including any backtested or simulated results produced by this software, is not indicative of future results. Backtests are simplified models and do not account for all real-world conditions (liquidity, slippage variability, exchange outages, funding costs, taxes, etc.).
+
+The software is provided "as is" without warranty of any kind, express or implied, including but not limited to warranties of accuracy, merchantability, fitness for a particular purpose, or non-infringement. The author makes no representation that the analysis, data, or results are correct, complete, or current. Market data is fetched from third-party APIs and may contain errors or omissions.
+
+By using this software you agree that you alone are responsible for any decisions you make and any losses you incur, and that the author and any contributors shall not be liable for any direct, indirect, incidental, consequential, or other damages arising from the use of, or inability to use, this software. You should consult a licensed financial advisor before making any investment decision.
+
+## License
+
+MIT
